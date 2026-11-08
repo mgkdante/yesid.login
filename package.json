@@ -13,7 +13,8 @@
     "schema": "bun scripts/generate-schema.ts",
     "deploy": "bun run copy-editor && bun run build:login && bun test tests && bun run check && bun run test:e2e && wrangler deploy",
     "build:login": "node scripts/build-login.mjs",
-    "og": "bun scripts/build-og.ts"
+    "og": "bun scripts/build-og.ts",
+    "favicon": "bun scripts/build-favicon.ts"
   },
   "dependencies": {
     "@plausible-analytics/tracker": "0.4.7",
