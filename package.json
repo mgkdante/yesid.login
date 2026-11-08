@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@sveltia/cms": "0.261.0",
-    "@yesid/analytics": "https://github.com/mgkdante/yesid.design/releases/download/v0.38.0/yesid-analytics-0.38.0.tgz",
+    "@yesid/analytics": "https://github.com/mgkdante/yesid.design/releases/download/v0.38.1/yesid-analytics-0.38.1.tgz",
     "@yesid/motion": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-motion-0.36.1.tgz",
     "@yesid/seo-kit": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-seo-kit-0.36.1.tgz",
     "@yesid/tokens": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-tokens-0.36.1.tgz",
