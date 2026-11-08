@@ -366,6 +366,31 @@ async function emailSamples(browser: Awaited<ReturnType<typeof chromium.launch>>
   }
 }
 
+/** Served as login.yesid.dev, each page load sends exactly one reduced pageview to the relay and nothing to plausible.io. */
+async function analyticsCounting(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  // Chrome treats the rerouted host as another origin, so 'self' would refuse the page's own files; the CSP has its own unit test.
+  const context = await browser.newContext({ bypassCSP: true });
+  const page = await context.newPage();
+  const host = `http://login.yesid.dev:${PORT}`;
+  const events: { n: string; u: string; d: string }[] = [], direct: string[] = [];
+  await page.route('https://plausible.io/**', route => { direct.push(route.request().url()); return route.abort(); });
+  await page.route(`${host}/**`, route => route.continue({ url: route.request().url().replace(host, ORIGIN) }));
+  await page.route(`${host}/relay/e`, route => { events.push(route.request().postDataJSON()); return route.fulfill({ status: 202, body: '' }); });
+  // The tracker stays silent in automated browsers unless told otherwise.
+  await page.addInitScript(() => { Reflect.set(window, '__plausible', true); });
+  const pageviews = () => events.filter(event => event.n === 'pageview');
+  const visits: [string, string][] = [['/?lang=fr', '/'], ['/legal/privacy?lang=en&utm_source=e2e#top', '/legal/privacy?utm_source=e2e'], ['/someone@example.test', '/404']];
+  for (const [index, [path, expected]] of visits.entries()) {
+    await page.goto(host + path); await page.locator('#app footer, [data-testid="footer"]').first().waitFor();
+    for (let wait = 0; wait < 20 && pageviews().length <= index; wait += 1) await page.waitForTimeout(250);
+    await page.waitForTimeout(1000);
+    check(`one pageview for ${path}`, pageviews().length === index + 1, JSON.stringify(pageviews()));
+    check(`the pageview for ${path} is reduced`, pageviews()[index].u === host + expected && pageviews()[index].d === 'login.yesid.dev', pageviews()[index].u);
+  }
+  check('nothing goes straight to plausible.io', direct.length === 0, direct.join(' '));
+  await context.close();
+}
+
 await prepare();
 const worker = await startWorker();
 const browser = await chromium.launch();
@@ -375,6 +400,7 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
+  await analyticsCounting(browser);
   await themeAtSendTime(page);
   await legalNavigation(page);
   await signsInWithARealCode(page);

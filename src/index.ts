@@ -13,6 +13,7 @@ import { POPUP_HTML, LOGIN_HEADERS, HOME_HTML, editorHtml, EDITOR_HEADERS } from
 import { confirmSignOut, page, denied, json, sameCodeFailure } from './responses.ts';
 import { canManage, people } from './people.ts';
 import { atLeast, claimCode } from './code-requests.ts';
+import { ANALYTICS_ENDPOINT, relayAnalytics } from './analytics.ts';
 
 type SessionLookup = (request: Request, env: Env, ctx: ExecutionContext) => Promise<(Editor & { sessionId?: string; siteSlug?: string | null }) | undefined>;
 const authFor = (request: Request, env: Env, ctx: ExecutionContext) => createAuth({
@@ -95,6 +96,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, lookup: 
   if (authResponse) return withoutSetCookie(authResponse);
   const url = new URL(request.url), path = url.pathname;
   if (path === '/legal/privacy' || path === '/legal/terms') return page(publicHtml(path === '/legal/privacy' ? 'privacy' : 'terms'), 'text/html; charset=utf-8', LOGIN_HEADERS);
+  if (path === ANALYTICS_ENDPOINT) return relayAnalytics(request);
   // The first published addresses, in case they were shared.
   if (path === '/privacy' || path === '/terms') return Response.redirect(`${url.origin}/legal${path}${url.search}`, 301);
   if (path === '/auth/popup') return page(POPUP_HTML, 'text/html; charset=utf-8', LOGIN_HEADERS);
