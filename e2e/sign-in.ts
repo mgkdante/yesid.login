@@ -117,11 +117,15 @@ async function signsInWithARealCode(page: Page) {
   await page.locator('a.login-people').waitFor({ timeout: 15000 });
   check('an Owner sees the People button', true);
   await page.setViewportSize({ width: 390, height: 844 });
-  const fab = await page.locator('a.login-people').evaluate(link => {
+  // The phone layout can land a moment after the resize, so measure until it does, and report what was seen if it never does.
+  const measureFab = () => page.locator('a.login-people').evaluate(link => {
     const box = link.getBoundingClientRect(), icon = getComputedStyle(link, '::before'), style = getComputedStyle(link);
     return { width: box.width, height: box.height, radius: style.borderRadius, text: style.fontSize, icon: icon.width, name: (link as HTMLAnchorElement).title };
   });
-  check('on a phone the People button is a named circle with an icon', fab.width === 48 && fab.height === 48 && fab.radius === '50%' && fab.text === '0px' && fab.icon === '24px' && fab.name === 'Personnes');
+  const isFab = (fab: Awaited<ReturnType<typeof measureFab>>) => fab.width === 48 && fab.height === 48 && fab.radius === '50%' && fab.text === '0px' && fab.icon === '24px' && fab.name === 'Personnes';
+  let fab = await measureFab();
+  for (const settle = Date.now() + 5000; !isFab(fab) && Date.now() < settle; fab = await measureFab()) await page.waitForTimeout(100);
+  check('on a phone the People button is a named circle with an icon', isFab(fab), JSON.stringify(fab));
   await page.screenshot({ path: resolve(SHOTS, 'people-fab.png') });
   const shown = (hash: string) => page.evaluate(async value => { location.hash = value; await new Promise(done => setTimeout(done, 50)); return getComputedStyle(document.querySelector('a.login-people')!).display !== 'none'; }, hash);
   check('the People button stays off an open entry', !await shown('#/collections/pages/entries/area') && await shown('#/collections/pages'));
