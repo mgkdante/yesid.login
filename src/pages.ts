@@ -8,8 +8,8 @@ export const PAGE_HEADERS = {
 
 /** no-transform stops Cloudflare editing our HTML, such as injecting the zone's Web Analytics beacon. */
 const HTML_CACHE = 'no-store, no-transform';
-/** Login pages also send cookieless Plausible pageviews; the editor does not. */
-export const LOGIN_HEADERS = { ...PAGE_HEADERS, 'Cache-Control': HTML_CACHE, 'Content-Security-Policy': PAGE_HEADERS['Content-Security-Policy'].replace("style-src 'self'", "img-src 'self' data:; style-src 'self' 'unsafe-inline'").replace("connect-src 'self'", "connect-src 'self' https://plausible.io") };
+/** Login pages send cookieless Plausible pageviews to this origin's relay only, so plausible.io stays out of connect-src. */
+export const LOGIN_HEADERS = { ...PAGE_HEADERS, 'Cache-Control': HTML_CACHE, 'Content-Security-Policy': PAGE_HEADERS['Content-Security-Policy'].replace("style-src 'self'", "img-src 'self' data:; style-src 'self' 'unsafe-inline'") };
 const SUMMARY = 'Modifiez votre site. Edit your site. Edita tu sitio.';
 const SHARE_IMAGE = 'https://login.yesid.dev/login/og.png';
 /** One card for every address: it names no client, and a link preview cannot know the reader's language. */

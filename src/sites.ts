@@ -1,7 +1,7 @@
 import type { Site } from './guard.ts';
 
 export const CONTENT_FILES = [/^src\/lib\/content\/[\w.-]+\.json$/, /^src\/lib\/content\/[a-z][a-z0-9-]*\/[\w.~-]+\.md$/, /^static\/images\/uploads\/[\w~-]+\.(webp|png|jpe?g|avif)$/];
-const RESERVED = new Set(['auth', 'api', 'admin', 'login', 'editor', 'account', 'privacy', 'terms', 'legal']);
+const RESERVED = new Set(['auth', 'api', 'admin', 'login', 'editor', 'account', 'privacy', 'terms', 'legal', 'relay']);
 export const validSlug = (slug: string): boolean => /^[a-z0-9][a-z0-9.-]{0,62}$/.test(slug) && !RESERVED.has(slug);
 export interface ClientSite extends Site {
   slug: string;

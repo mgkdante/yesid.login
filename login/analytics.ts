@@ -1,37 +1,28 @@
-import { init, type PlausibleRequestPayload } from '@plausible-analytics/tracker';
+import { createAnalytics } from '@yesid/analytics/client';
+import { defineAnalyticsPreset } from '@yesid/analytics/config';
 
+/** The Plausible site for these pages only. Never yesid.dev: each subdomain is its own site. */
 export const ANALYTICS_DOMAIN = 'login.yesid.dev';
+/** Same-origin route the Worker forwards to Plausible; browsers that block plausible.io allow it. */
+export const ANALYTICS_ENDPOINT = '/relay/e';
+const PRESET = defineAnalyticsPreset({ events: [] });
 const KNOWN_PATHS = new Set(['/', '/account', '/auth/popup', '/legal/privacy', '/legal/terms']);
 
-/** Reduces a page address to one of a few fixed paths, so no client name, query or typed address leaves the browser. */
+/** Reduces a page path to one of a few fixed paths, so no client name or typed address leaves the browser. */
 export function analyticsPath(pathname: string, notFound: boolean): string {
   if (notFound) return '/404';
   if (KNOWN_PATHS.has(pathname)) return pathname;
   return /^\/[^/]+\/people$/.test(pathname) ? '/site/people' : '/404';
 }
 
-/** Keeps only pageviews, with a reduced address and the referrer's origin. */
-export function reducePageview(payload: PlausibleRequestPayload, notFound: boolean): PlausibleRequestPayload | null {
-  if (payload.n !== 'pageview') return null;
-  try {
-    const url = new URL(payload.u);
-    let referrer: string | null = null;
-    try {
-      const from = new URL(payload.r ?? '');
-      if (from.protocol === 'https:' || from.protocol === 'http:') referrer = `${from.origin}/`;
-    } catch {}
-    const { p: _props, $: _revenue, ...rest } = payload;
-    return { ...rest, u: `${url.origin}${analyticsPath(url.pathname, notFound)}`, r: referrer };
-  } catch {
-    return null;
-  }
-}
+let started = false;
 
-/** Counts the page with cookieless Plausible, only on the production host. */
+/** Counts this page once with cookieless Plausible, through the Worker's relay, only on the production host. */
 export function startAnalytics(): void {
-  if (location.hostname !== ANALYTICS_DOMAIN) return;
+  if (started) return;
+  started = true;
   const notFound = document.documentElement.dataset.page === 'not-found';
   try {
-    init({ domain: ANALYTICS_DOMAIN, logging: false, bindToWindow: false, transformRequest: payload => reducePageview(payload, notFound) });
+    createAnalytics(PRESET, { domain: ANALYTICS_DOMAIN, endpoint: ANALYTICS_ENDPOINT, reducePath: path => analyticsPath(path, notFound) });
   } catch {}
 }
