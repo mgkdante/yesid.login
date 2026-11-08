@@ -5,6 +5,7 @@
     "": {
       "name": "yesid-login",
       "dependencies": {
+        "@plausible-analytics/tracker": "0.4.7",
         "@sveltia/cms": "0.261.0",
         "@yesid/motion": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-motion-0.36.1.tgz",
         "@yesid/seo-kit": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-seo-kit-0.36.1.tgz",
@@ -227,6 +228,8 @@
     "@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.156.0", "", {}, "sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw=="],
+
+    "@plausible-analytics/tracker": ["@plausible-analytics/tracker@0.4.7", "", {}, "sha512-majmq1uion4uLo88Tr0eMCMfi7TY00okp3I0Vql9egFaAz6DYCW4bJaV3t5LB3BfcvW5exJpmqzROU0a1b6nAA=="],
 
     "@poppinss/colors": ["@poppinss/colors@4.1.6", "", { "dependencies": { "kleur": "^4.1.5" } }, "sha512-H9xkIdFswbS8n1d6vmRd8+c10t2Qe+rZITbbDHHkQixH5+2x1FDGmi/0K+WgWiqQFKPSlIYB7jlH6Kpfn6Fleg=="],
 

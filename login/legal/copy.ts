@@ -19,7 +19,7 @@ export interface LegalPage {
   sections: readonly LegalSection[];
 }
 
-export const LEGAL_UPDATED = '2026-11-07';
+export const LEGAL_UPDATED = '2026-11-08';
 export const LEGAL_CONTACT = 'contact@yesid.dev';
 
 export const privacy: Record<Locale, LegalPage> = {
@@ -39,26 +39,29 @@ export const privacy: Record<Locale, LegalPage> = {
         'Un journal de ce qui a été modifié, quand et par quel identifiant interne, ainsi que des ajouts et retraits de personnes.',
         'Des données techniques comme votre adresse IP, pour limiter les tentatives et protéger le service.'
       ], subsections: [
-        { heading: 'Préférences conservées dans votre navigateur', paragraphs: ['Votre navigateur garde aussi votre session, votre langue et votre thème sur votre appareil pour que le service fonctionne.'] }
+        { heading: 'Préférences conservées dans votre navigateur', paragraphs: ['Votre navigateur garde aussi votre session, votre langue et votre thème sur votre appareil pour que le service fonctionne.'] },
+        { heading: 'Comptage des visites', paragraphs: ['Je compte les visites des pages de connexion, de compte, des personnes et des pages juridiques avec Plausible Analytics, pour voir comment le service est utilisé. L’éditeur de site n’est pas compté. Au chargement d’une de ces pages, votre navigateur envoie à Plausible le nom de la page, où le nom du site du client est remplacé par un nom générique et le reste de l’adresse est retiré, le site d’origine (son adresse sans le chemin) et les catégories de navigateur, de système d’exploitation et d’appareil. Chaque requête contient aussi votre adresse IP et votre agent utilisateur : Plausible déduit de l’adresse IP un pays, une région et une ville approximatifs et combine les deux valeurs à un sel renouvelé chaque jour pour compter les visiteurs de la journée, puis les élimine. Plausible n’utilise ni témoins, ni stockage du navigateur, ni identifiant persistant. Vous pouvez bloquer plausible.io dans votre navigateur ou écrire à contact@yesid.dev.'] }
       ] },
       { heading: 'Pourquoi je les recueille', list: [
         'Vous envoyer un code et vous connecter.',
         'Vérifier à chaque demande que vous avez accès à ce site.',
         'Vous prévenir, ou prévenir le propriétaire, d’un ajout ou d’un changement d’adresse.',
-        'Savoir qui a modifié quoi et régler les problèmes de sécurité.'
+        'Savoir qui a modifié quoi et régler les problèmes de sécurité.',
+        'Compter les visites de ces pages et voir comment le service est utilisé.'
       ] },
       { heading: 'Où vont vos renseignements', paragraphs: ['Ces fournisseurs traitent des renseignements à l’extérieur du Québec :'], list: [
         'Cloudflare : héberge le service et sa base de données. Courriel, codes hachés, sessions et journaux.',
         'Resend, aux États-Unis : envoie les courriels. Courriel et code.',
         'GitHub : conserve le contenu du site et ses modifications. Le service y ajoute un identifiant interne, et non votre nom ou votre courriel.',
-        'Google, par l’API Gemini, seulement si vous utilisez la traduction de l’éditeur : le texte que vous choisissez de traduire, envoyé depuis votre navigateur avec votre propre clé Google. Si votre clé utilise l’offre gratuite de Google, Google peut utiliser ce texte pour améliorer ses produits et des personnes chez Google peuvent le lire : ne traduisez pas de renseignements personnels ou confidentiels.'
+        'Google, par l’API Gemini, seulement si vous utilisez la traduction de l’éditeur : le texte que vous choisissez de traduire, envoyé depuis votre navigateur avec votre propre clé Google. Si votre clé utilise l’offre gratuite de Google, Google peut utiliser ce texte pour améliorer ses produits et des personnes chez Google peuvent le lire : ne traduisez pas de renseignements personnels ou confidentiels.',
+        'Plausible Analytics (Plausible Insights OÜ, Estonie) : compte les visites des pages de connexion. Les données de visite sont traitées et conservées dans l’Union européenne.'
       ], after: [
         'Le propriétaire d’un site voit l’adresse courriel, le rôle, l’état et la dernière modification de chaque personne de ce site, et rien sur d’autres sites. Je peux voir ces renseignements pour faire fonctionner le service.',
         'À chaque modification enregistrée dans le dépôt du site, le service ajoute un identifiant interne, et non votre nom ou votre courriel. Ce que vous écrivez vous-même, dans le contenu ou le titre d’une modification, y est enregistré tel quel, sauf un titre contenant une adresse courriel, remplacé par un titre générique.'
       ] },
       { heading: 'Ce que je ne fais pas', list: [
         'Aucune vente de vos renseignements et aucun partage à des fins publicitaires.',
-        'Aucune publicité, aucun suivi et aucun outil d’analyse sur ces pages.',
+        'Aucune publicité et aucun suivi d’un site ou d’un appareil à l’autre.',
         'Aucun mot de passe et aucune donnée de paiement.'
       ] },
       { heading: 'Conservation', list: [
@@ -68,6 +71,7 @@ export const privacy: Record<Locale, LegalPage> = {
         'Journaux : supprimés automatiquement par ce nettoyage une fois qu’ils ont 12 mois.',
         'Invitations non utilisées : elles expirent après 7 jours.',
         'Compte : tant que vous avez accès à un site. Après votre retrait, il est supprimé par ce nettoyage une fois qu’aucun journal ne s’y rattache, normalement au plus environ 12 mois plus tard.',
+        'Comptage des visites : Plausible ne conserve que des statistiques agrégées et ne conserve jamais votre adresse IP ni votre agent utilisateur.',
         'Copies conservées par les fournisseurs : Resend garde les courriels qu’il envoie, codes compris, pendant 30 jours; Cloudflare garde les journaux du service jusqu’à 7 jours et peut remettre la base de données dans son état de n’importe quel moment des 7 derniers jours; GitHub garde vos modifications dans l’historique du site.'
       ], after: ['Le nettoyage s’exécute une fois par jour. S’il échoue, la suppression attend le suivant.'] },
       { heading: 'Sécurité', paragraphs: ['Je réduis les risques d’abord en recueillant peu. Pour le reste : les codes sont conservés sous forme chiffrée par hachage et expirent en 5 minutes, les sessions durent 8 heures au plus et chaque demande vérifie que vous avez accès à ce site. Aucun système n’est parfaitement sûr, et je ne prétendrai pas le contraire.'] },
@@ -95,26 +99,29 @@ export const privacy: Record<Locale, LegalPage> = {
         'A log of what was edited, when and by which internal ID, and of people being added and removed.',
         'Technical data such as your IP address, to limit attempts and protect the service.'
       ], subsections: [
-        { heading: 'Preferences stored in your browser', paragraphs: ['Your browser also keeps your session, language and theme on your device so the service works.'] }
+        { heading: 'Preferences stored in your browser', paragraphs: ['Your browser also keeps your session, language and theme on your device so the service works.'] },
+        { heading: 'Visit counts', paragraphs: ['I count visits to the sign-in, account, people and legal pages with Plausible Analytics, to see how the service is used. The site editor is not counted. When one of these pages loads, your browser sends Plausible the name of the page, with the client site’s name replaced by a placeholder and the rest of the address removed, the referring site (its address without the path), and your browser, operating-system and device category. Each request also carries your IP address and User-Agent: Plausible derives an approximate country, region and city from the IP address and combines both values with a salt that changes every day to count that day’s visitors, then discards them. Plausible uses no cookies, no browser storage and no persistent identifier. You can block plausible.io in your browser, or write to contact@yesid.dev.'] }
       ] },
       { heading: 'Why I collect it', list: [
         'To send you a code and sign you in.',
         'To check on every request that you have access to that site.',
         'To tell you or the Owner about an addition or a change of address.',
-        'To know who edited what, and to deal with security problems.'
+        'To know who edited what, and to deal with security problems.',
+        'To count visits to these pages and see how the service is used.'
       ] },
       { heading: 'Where it goes', paragraphs: ['These providers process information outside Quebec:'], list: [
         'Cloudflare: hosts the service and its database. Email, hashed codes, sessions and logs.',
         'Resend, in the United States: sends the emails. Email and code.',
         'GitHub: stores the site’s content and its edits. The service adds an internal ID there, not your name or email.',
-        'Google, through the Gemini API, only if you use the editor’s translation: the text you choose to translate, sent from your browser with your own Google key. If your key uses Google’s free tier, Google may use that text to improve its products and people at Google may read it, so do not translate personal or confidential information.'
+        'Google, through the Gemini API, only if you use the editor’s translation: the text you choose to translate, sent from your browser with your own Google key. If your key uses Google’s free tier, Google may use that text to improve its products and people at Google may read it, so do not translate personal or confidential information.',
+        'Plausible Analytics (Plausible Insights OÜ, Estonia): counts visits to the sign-in pages. Visit data is processed and stored in the European Union.'
       ], after: [
         'A site’s Owner sees the email address, role, status and last edit of each person on that site, and nothing about other sites. I can see this information to run the service.',
         'To each edit saved in the site’s repository, the service adds an internal ID, not your name or email. What you write yourself, in the content or in an edit’s title, is saved there as written, except that a title containing an email address is replaced with a generic one.'
       ] },
       { heading: 'What I do not do', list: [
         'No selling of your information and no sharing it for advertising.',
-        'No advertising, no tracking and no analytics on these pages.',
+        'No advertising, and no tracking across sites or devices.',
         'No passwords and no payment data.'
       ] },
       { heading: 'Retention', list: [
@@ -124,6 +131,7 @@ export const privacy: Record<Locale, LegalPage> = {
         'Logs: deleted automatically by the same cleanup once they are 12 months old.',
         'Unused invitations: they expire after 7 days.',
         'Account: as long as you have access to a site. After you are removed, it is deleted by the same cleanup once no log refers to it, normally no more than about 12 months later.',
+        'Visit counts: Plausible keeps only aggregate statistics and never stores your IP address or User-Agent.',
         'Copies kept by providers: Resend keeps the emails it sends, codes included, for 30 days; Cloudflare keeps service logs for up to 7 days and can return the database to its state at any moment in the last 7 days; GitHub keeps your edits in the site’s history.'
       ], after: ['The cleanup runs once a day. If a run fails, deletion waits for the next one.'] },
       { heading: 'Security', paragraphs: ['I reduce risk first by collecting little. Beyond that: codes are kept only in hashed form and expire in 5 minutes, sessions last 8 hours at most, and every request checks that you have access to that site. No system is perfectly secure, and I will not pretend otherwise.'] },
@@ -151,26 +159,29 @@ export const privacy: Record<Locale, LegalPage> = {
         'Un registro de qué se editó, cuándo y con qué identificador interno, y de las personas añadidas y quitadas.',
         'Datos técnicos como su dirección IP, para limitar los intentos y proteger el servicio.'
       ], subsections: [
-        { heading: 'Preferencias guardadas en su navegador', paragraphs: ['Su navegador también guarda su sesión, idioma y tema en su dispositivo para que el servicio funcione.'] }
+        { heading: 'Preferencias guardadas en su navegador', paragraphs: ['Su navegador también guarda su sesión, idioma y tema en su dispositivo para que el servicio funcione.'] },
+        { heading: 'Recuento de visitas', paragraphs: ['Cuento las visitas a las páginas de inicio de sesión, de cuenta, de personas y legales con Plausible Analytics, para ver cómo se usa el servicio. El editor del sitio no se cuenta. Cuando se carga una de estas páginas, su navegador envía a Plausible el nombre de la página, con el nombre del sitio del cliente sustituido por uno genérico y el resto de la dirección eliminado, el sitio de referencia (su dirección sin la ruta) y su tipo de navegador, sistema operativo y dispositivo. Cada solicitud también lleva su dirección IP y su agente de usuario: Plausible deduce de la dirección IP un país, una región y una ciudad aproximados y combina ambos valores con una sal que cambia cada día para contar los visitantes de ese día, y luego los descarta. Plausible no usa cookies, ni almacenamiento del navegador, ni identificadores persistentes. Puede bloquear plausible.io en su navegador o escribir a contact@yesid.dev.'] }
       ] },
       { heading: 'Por qué la recopilo', list: [
         'Para enviarle un código e iniciar su sesión.',
         'Para comprobar en cada solicitud que tiene acceso a ese sitio.',
         'Para avisarle a usted o al propietario de una incorporación o de un cambio de correo.',
-        'Para saber quién editó qué y resolver problemas de seguridad.'
+        'Para saber quién editó qué y resolver problemas de seguridad.',
+        'Para contar las visitas a estas páginas y ver cómo se usa el servicio.'
       ] },
       { heading: 'A dónde va', paragraphs: ['Estos proveedores tratan información fuera de Quebec:'], list: [
         'Cloudflare: aloja el servicio y su base de datos. Correo, códigos en hash, sesiones y registros.',
         'Resend, en Estados Unidos: envía los correos. Correo y código.',
         'GitHub: guarda el contenido del sitio y sus ediciones. El servicio añade allí un identificador interno, no su nombre ni su correo.',
-        'Google, mediante la API de Gemini, solo si usted usa la traducción del editor: el texto que elige traducir, enviado desde su navegador con su propia clave de Google. Si su clave usa el nivel gratuito de Google, Google puede usar ese texto para mejorar sus productos y personas de Google pueden leerlo: no traduzca información personal ni confidencial.'
+        'Google, mediante la API de Gemini, solo si usted usa la traducción del editor: el texto que elige traducir, enviado desde su navegador con su propia clave de Google. Si su clave usa el nivel gratuito de Google, Google puede usar ese texto para mejorar sus productos y personas de Google pueden leerlo: no traduzca información personal ni confidencial.',
+        'Plausible Analytics (Plausible Insights OÜ, Estonia): cuenta las visitas a las páginas de inicio de sesión. Los datos de las visitas se procesan y almacenan en la Unión Europea.'
       ], after: [
         'El propietario de un sitio ve el correo, el rol, el estado y la última edición de cada persona de ese sitio, y nada sobre otros sitios. Yo puedo ver esta información para operar el servicio.',
         'A cada edición guardada en el repositorio del sitio, el servicio añade un identificador interno, no su nombre ni su correo. Lo que usted escribe, en el contenido o en el título de una edición, se guarda allí tal como lo escribe, salvo un título con una dirección de correo, que se sustituye por uno genérico.'
       ] },
       { heading: 'Lo que no hago', list: [
         'Sin venta de su información y sin compartirla con fines publicitarios.',
-        'Sin publicidad, sin rastreo y sin herramientas de analítica en estas páginas.',
+        'Sin publicidad y sin rastreo entre sitios o dispositivos.',
         'Sin contraseñas y sin datos de pago.'
       ] },
       { heading: 'Conservación', list: [
@@ -180,6 +191,7 @@ export const privacy: Record<Locale, LegalPage> = {
         'Registros: esa limpieza los elimina automáticamente cuando cumplen 12 meses.',
         'Invitaciones sin usar: vencen después de 7 días.',
         'Cuenta: mientras tenga acceso a un sitio. Después de que lo quiten, esa limpieza la elimina cuando ningún registro se refiera a ella, normalmente como máximo unos 12 meses después.',
+        'Recuento de visitas: Plausible solo guarda estadísticas agregadas y nunca guarda su dirección IP ni su agente de usuario.',
         'Copias que guardan los proveedores: Resend guarda los correos que envía, incluidos los códigos, durante 30 días; Cloudflare guarda los registros del servicio hasta 7 días y puede devolver la base de datos a su estado en cualquier momento de los últimos 7 días; GitHub guarda sus ediciones en el historial del sitio.'
       ], after: ['La limpieza se ejecuta una vez al día. Si falla, la eliminación espera a la siguiente.'] },
       { heading: 'Seguridad', paragraphs: ['Reduzco el riesgo, ante todo, recopilando poco. Más allá de eso: los códigos se guardan solo en forma de hash y vencen en 5 minutos, las sesiones duran 8 horas como máximo y cada solicitud comprueba que usted tiene acceso a ese sitio. Ningún sistema es perfectamente seguro, y no voy a fingir lo contrario.'] },

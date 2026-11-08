@@ -167,7 +167,7 @@ async function navbarIsWhole(page: Page) {
     check(`no construction props on /${path}`, await page.locator('.construction-ground').count() === 0);
   }
   await page.goto(`${ORIGIN}/legal/privacy?lang=en`); await page.locator('[data-testid="page-legal"]').waitFor();
-  check('legal pages follow the yesid.dev reading layout', await page.locator('h1').innerText() === 'Privacy Policy' && (await page.locator('[data-testid="legal-body"] h2').first().getAttribute('id')) === 'who-i-am' && await page.locator('.legal-toc').count() === 0 && (await page.locator('[data-testid="legal-body"]').innerText()).includes('Last updated: 2026-11-07'));
+  check('legal pages follow the yesid.dev reading layout', await page.locator('h1').innerText() === 'Privacy Policy' && (await page.locator('[data-testid="legal-body"] h2').first().getAttribute('id')) === 'who-i-am' && await page.locator('.legal-toc').count() === 0 && (await page.locator('[data-testid="legal-body"]').innerText()).includes('Last updated: 2026-11-08'));
   const moved = await fetch(`${ORIGIN}/privacy?lang=fr`, { redirect: 'manual' });
   check('the first legal addresses redirect', moved.status === 301 && moved.headers.get('location') === `${ORIGIN}/legal/privacy?lang=fr`);
   await page.goto(`${ORIGIN}/?lang=fr`); await page.locator('#email').waitFor();

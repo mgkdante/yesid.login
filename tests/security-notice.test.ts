@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test';
 test('technical data notice names IP only in the three approved languages', async () => {
   const source = await Bun.file('login/legal/copy.ts').text();
   for (const phrase of ['adresse IP et votre navigateur', 'IP address and browser', 'dirección IP y su navegador']) expect(source).not.toContain(phrase);
-  expect(source).toContain("LEGAL_UPDATED = '2026-11-07'");
+  expect(source).toContain("LEGAL_UPDATED = '2026-11-08'");
 });
 
 test('legal text keeps the public contact, not the operator or private details', async () => {

@@ -16,6 +16,7 @@
     "og": "bun scripts/build-og.ts"
   },
   "dependencies": {
+    "@plausible-analytics/tracker": "0.4.7",
     "@sveltia/cms": "0.261.0",
     "@yesid/motion": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-motion-0.36.1.tgz",
     "@yesid/seo-kit": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-seo-kit-0.36.1.tgz",

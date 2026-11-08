@@ -1,9 +1,11 @@
 import { mount } from 'svelte';
 import { configureUi } from '@yesid/ui/cn';
 import App from './App.svelte';
+import { startAnalytics } from './analytics';
 import './style.css';
 
 configureUi({});
+startAnalytics();
 async function start() {
   const path = location.pathname;
   const component = document.documentElement.dataset.page === 'not-found' ? await import('./NotFound.svelte')
