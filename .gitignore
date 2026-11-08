@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars*
+*.pem
+public/editor/sveltia-cms.*
+public/editor/chunks/
+public/login/tokens.css
+public/login/fonts.css
+public/login/fonts/
+public/login/build/
+
+public/editor/locales/

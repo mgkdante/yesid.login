@@ -1,0 +1,8 @@
+/editor/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' blob: data: https://www.githubstatus.com https://generativelanguage.googleapis.com; media-src 'self' blob:; frame-src blob:; worker-src blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+
+/login/*
+  Content-Security-Policy: default-src 'none'; font-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff

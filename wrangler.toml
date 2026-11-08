@@ -1,0 +1,28 @@
+name = "yesid-login"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+routes = [{ pattern = "login.yesid.dev", custom_domain = true }]
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "site-editor-login-proof"
+database_id = "2387f92d-456e-4942-8a39-bcc41414b19f"
+migrations_dir = "migrations"
+
+[vars]
+ALERT_EMAIL = "admin@yesid.dev"
+GITHUB_APP_ID = "5650340"
+EMAIL_FROM = "\"Login by yesid.dev\" <login@yesid.dev>"
+
+[observability]
+enabled = true
+
+[triggers]
+crons = ["17 8 * * *"]

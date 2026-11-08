@@ -1,0 +1,43 @@
+{
+  "name": "yesid-login",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "scripts": {
+    "test": "bun test tests",
+    "test:e2e": "bun e2e/sign-in.ts",
+    "check": "tsc --noEmit && svelte-check --tsconfig login/tsconfig.json",
+    "copy-editor": "bun scripts/copy-editor.ts",
+    "schema": "bun scripts/generate-schema.ts",
+    "deploy": "bun run copy-editor && bun run build:login && bun test tests && bun run check && bun run test:e2e && wrangler deploy",
+    "build:login": "node scripts/build-login.mjs",
+    "og": "bun scripts/build-og.ts"
+  },
+  "dependencies": {
+    "@sveltia/cms": "0.261.0",
+    "@yesid/motion": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-motion-0.36.1.tgz",
+    "@yesid/seo-kit": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-seo-kit-0.36.1.tgz",
+    "@yesid/tokens": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-tokens-0.36.1.tgz",
+    "@yesid/ui": "https://github.com/mgkdante/yesid.design/releases/download/v0.36.1/yesid-ui-0.36.1.tgz",
+    "better-auth": "1.7.18",
+    "graphql": "17.1.0",
+    "satori": "0.33.5",
+    "svelte": "5.57.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261106.1",
+    "@resvg/resvg-js": "2.6.2",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "latest",
+    "playwright-core": "1.62.0",
+    "svelte-check": "4.7.7",
+    "tailwindcss": "4.3.3",
+    "typescript": "~6.0.3",
+    "vite": "8.3.5",
+    "wrangler": "^4.158.0"
+  }
+}
