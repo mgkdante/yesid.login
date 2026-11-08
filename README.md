@@ -217,7 +217,11 @@ The daily Cron Trigger runs at 08:17 UTC. `src/retention.ts` runs one D1 batch:
 - Delete edit and People logs strictly older than twelve calendar months.
 - Delete expired sessions and verifications, normalizing SQLite and ISO dates.
 - Delete email-change budgets older than one day (Unix seconds).
-- Delete rate-limit rows older than one day (Better Auth's Unix milliseconds).
+- Delete rate-limit rows older than 23 hours (Better Auth's Unix milliseconds).
+
+A second, hourly Cron Trigger (`47 * * * *`, `IP_CRON`) runs only that rate-limit deletion. Those rows hold
+IP addresses, and the privacy notice says they are deleted after one day: with a run every hour and a
+23-hour cut-off, no row outlives 24 hours while the runs succeed. A failed hourly run alerts like the daily one.
 - Delete users without memberships, retained logs as editor, actor or target, or invitation notices.
 
 Account, session and email-budget foreign keys cascade. Invitation notices reference
