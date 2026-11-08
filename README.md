@@ -8,7 +8,6 @@ This is the production sign-in service for [yesid.dev](https://yesid.dev) client
 ## Documentation
 
 - [Architecture](https://yesid-dev.notion.site/4113e863069081b99778facfd68548a6): how the service works today, verified against this repository: routes, sign-in and sessions, the GitHub relay, the data model, testing, release and known limits.
-- [Training course](https://app.notion.com/p/4123e863069081dbaf8ad368af52970f): a hands-on deep dive for maintainers, pinned to a commit. It lives in the maintainer's Notion workspace and is not public.
 
 ## Routes
 
