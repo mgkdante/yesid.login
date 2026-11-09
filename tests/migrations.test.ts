@@ -33,6 +33,27 @@ test('a removed site retires its slug, and no new site can take it', async () =>
   db.close();
 });
 
+test('a site with history cannot be deleted, so it is retired in place: access ends and the logs stay', async () => {
+  const { readdirSync } = await import('node:fs');
+  const db = new Database(':memory:'); db.exec('PRAGMA foreign_keys = ON');
+  for (const name of readdirSync('migrations').filter(n => n.endsWith('.sql')).sort()) db.exec(await Bun.file(`migrations/${name}`).text());
+  db.exec(exampleSiteSql);
+  db.exec(`INSERT INTO user VALUES ('member','Member','member@example.test',1,NULL,0,0);
+    INSERT INTO membership (site_slug,user_id,role,confirmed_at) VALUES ('example','member','owner',datetime('now'));
+    INSERT INTO session (id,expiresAt,token,createdAt,updatedAt,userId,site_slug) VALUES ('s',9999999999999,'t',0,0,'member','example');
+    INSERT INTO edit_log (editor_id,repository,branch,paths,site_slug) VALUES ('member','example-owner/example-site','main','[]','example');
+    INSERT INTO people_log (site_slug,actor_id,action,target_id) VALUES ('example','member','add','member')`);
+  expect(() => db.exec("DELETE FROM site WHERE slug = 'example'")).toThrow('FOREIGN KEY');
+  db.exec("UPDATE site SET retired_at = datetime('now') WHERE slug = 'example'");
+  expect(db.query('SELECT count(*) AS n FROM membership').get()).toEqual({ n: 0 });
+  expect(db.query('SELECT count(*) AS n FROM session').get()).toEqual({ n: 0 });
+  expect(db.query('SELECT (SELECT count(*) FROM edit_log) + (SELECT count(*) FROM people_log) AS n').get()).toEqual({ n: 2 });
+  expect(() => db.exec("INSERT INTO membership (site_slug,user_id,role) VALUES ('example','member','it')")).toThrow('site_retired');
+  expect(() => db.exec("UPDATE site SET retired_at = NULL WHERE slug = 'example'")).toThrow('site_retired');
+  expect(() => db.exec(exampleSiteSql.replace('INSERT OR IGNORE', 'INSERT'))).toThrow();
+  db.close();
+});
+
 test('0005 confirms existing members and keeps old Worker additions usable', async () => {
   const db=new Database(':memory:'); db.exec('PRAGMA foreign_keys=ON');
   for(const name of ['0001_auth','0002_edit_log','0003_sites','0004_people']) db.exec(await Bun.file(`migrations/${name}.sql`).text());

@@ -32,7 +32,7 @@ const commit = (repo = 'a', branch = 'main') => ({
 });
 beforeEach(async () => {
   db = new Database(':memory:'); db.exec('PRAGMA foreign_keys = ON');
-  for (const file of ['0001_auth.sql', '0002_edit_log.sql', '0003_sites.sql', '0004_people.sql', '0005_invite_safeguards.sql', '0006_alerts.sql', '0007_code_budget.sql', '0008_session_site.sql', '0009_retired_slug.sql']) db.exec(await Bun.file('migrations/' + file).text());
+  for (const file of ['0001_auth.sql', '0002_edit_log.sql', '0003_sites.sql', '0004_people.sql', '0005_invite_safeguards.sql', '0006_alerts.sql', '0007_code_budget.sql', '0008_session_site.sql', '0009_retired_slug.sql', '0010_site_retired.sql']) db.exec(await Bun.file('migrations/' + file).text());
   db.exec(`INSERT INTO user VALUES ('a-user','A','a@example.test',1,NULL,0,0),('b-user','B','b@example.test',1,NULL,0,0);
     INSERT INTO site (slug,owner,repo,branch,label,installation_id) VALUES ('a','owner','a','main','Site A','fake-a'),('b','owner','b','draft','Site B','fake-b');
     INSERT INTO membership (site_slug,user_id,role) VALUES ('a','a-user','owner'),('b','b-user','employee')`);
@@ -278,6 +278,12 @@ test('the first legal addresses redirect and keep the language', async () => {
     const moved = await handler(new Request(`https://login.test/${name}?lang=es`,{redirect:'manual'}),env(),ctx);
     expect(moved.status).toBe(301); expect(moved.headers.get('Location')).toBe(`https://login.test/legal/${name}?lang=es`);
   }
+});
+test('a retired site is unknown everywhere, before any GitHub call', async () => {
+  db.exec("UPDATE site SET retired_at = datetime('now') WHERE slug = 'a'");
+  for (const path of ['/a/', '/a/config.yml', '/a/api/v3/repos/owner/a/commits', '/a/people']) expect((await request(path)).status).toBe(404);
+  expect(await (await request('/auth/sites')).json()).toEqual([]);
+  expect(calls).toHaveLength(0);
 });
 test('the operator hears once an hour when the shared GitHub budget runs low', async () => {
   const alerting = { ...env(), ALERT_EMAIL: 'admin@example.test', EMAIL_FROM: 'sender@example.test', RESEND_API_KEY: 'fake' } as Env;

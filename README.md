@@ -55,7 +55,7 @@ bunx wrangler d1 execute site-editor-login-proof --remote --command "SELECT coun
 
 Check that both counts are 1 without printing addresses. Remove a membership to revoke access to that site; delete the person's sessions to revoke sign-in. All three roles authorize editing.
 
-The script refuses the operator's own repositories (`yesid.*`, `transit`, `yesid-portfolio`), which share the App's account. Deleting a `site` row retires its slug (migration 0009): a database trigger records it in `retired_slug` and refuses any later site with that slug, so logs and edit history never mix two clients.
+The script refuses the operator's own repositories (`yesid.*`, `transit`, `yesid-portfolio`), which share the App's account. A departing client's site is retired in place (migration 0010): `UPDATE site SET retired_at = datetime('now') WHERE slug = '<slug>'`. Triggers delete its memberships and sessions at once and refuse new members, the Worker treats it as unknown, and the logs stay attributed. A plain `DELETE` is refused while logs refer to the site. Once retention has removed those logs, the daily cleanup deletes the row, and a trigger records the slug in `retired_slug` (migration 0009), which refuses any later site with it, so logs and edit history never mix two clients.
 
 Client data never goes into a migration or a tracked file. A test refuses any real-looking email address outside the operator's own domain and reserved example domains.
 
