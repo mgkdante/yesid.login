@@ -14,7 +14,8 @@
     "deploy": "bun run copy-editor && bun run build:login && bun test tests && bun run check && bun run test:e2e && wrangler deploy",
     "build:login": "node scripts/build-login.mjs",
     "og": "bun scripts/build-og.ts",
-    "favicon": "bun scripts/build-favicon.ts"
+    "favicon": "bun scripts/build-favicon.ts",
+    "deploy:staging": "bun run copy-editor && bun run build:login && bun test tests && bun run check && bun run test:e2e && wrangler deploy --env staging"
   },
   "dependencies": {
     "@sveltia/cms": "0.261.0",

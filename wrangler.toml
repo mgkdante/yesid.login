@@ -26,3 +26,19 @@ enabled = true
 
 [triggers]
 crons = ["17 8 * * *", "47 * * * *"]
+
+# Staging: its own Worker, database, GitHub App and session secret. Every release goes here first.
+[env.staging]
+name = "yesid-login-staging"
+routes = [{ pattern = "staging.login.yesid.dev", custom_domain = true }]
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "yesid-login-staging"
+database_id = "9dfc3e4d-f76a-4832-a18f-1c64177f8c10"
+migrations_dir = "migrations"
+
+[env.staging.vars]
+ALERT_EMAIL = "admin@yesid.dev"
+GITHUB_APP_ID = "5674741"
+EMAIL_FROM = "\"Login staging by yesid.dev\" <login@yesid.dev>"

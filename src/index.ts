@@ -169,13 +169,21 @@ function notFound(request: Request): Response {
   if (api || !acceptsHtml(request.headers.get('Accept'))) return denied('Not found', 404);
   return new Response(publicHtml('not-found'), { status: 404, headers: { ...LOGIN_HEADERS, 'Content-Type': 'text/html; charset=utf-8' } });
 }
+const PRODUCTION_HOST = 'login.yesid.dev';
+/** Decided by the address, not a setting: staging and local copies ask crawlers to keep out. */
+function indexing(request: Request, response: Response): Response {
+  if (new URL(request.url).hostname === PRODUCTION_HOST) return response;
+  const copy = new Response(response.body, response);
+  copy.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return copy;
+}
 /** Dependency injection for session resolution, with no environment-controlled bypass. */
 export const createHandler = (lookup: SessionLookup = currentEditor) => async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
-  try { return await route(request, env, ctx, lookup); }
+  try { return indexing(request, await route(request, env, ctx, lookup)); }
   catch (error) {
     // Only the error's kind: a message can carry an address or a path.
     console.error('Request failed', error instanceof Error ? error.name : 'unknown');
-    return denied('Service temporarily unavailable', 502);
+    return indexing(request, denied('Service temporarily unavailable', 502));
   }
 };
 export default { fetch: createHandler(), scheduled } satisfies ExportedHandler<Env>;
