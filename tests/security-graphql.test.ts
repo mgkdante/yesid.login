@@ -27,6 +27,27 @@ test('all captured read shapes accept made-up aliases and paths', () => {
     'defaultBranchRef{name}', 'object(expression:$expression){oid}'
   ]) expect(checkGraphql({ ...read(selection), variables: { ...variables, qualifiedName: 'refs/heads/main', expression: 'main:src/lib/content/en.json' } }, site).ok).toBe(true);
 });
+// Captured from the pinned Sveltia 0.261.0 on staging, 2026-11-08: the History panel and a save's publish status.
+const fullHistory = (path: string, i: number) => `history_${i}:ref(qualifiedName:$branch){target{... on Commit{history(first:100,path:"${path}"){nodes{oid messageHeadline author{name email avatarUrl user{login}} committedDate}}}}}`;
+const commitOid = '56'.repeat(20);
+test('the editor can read a content file history and a commit publish status, one query each', () => {
+  for (const selection of [
+    ['src/lib/content/home.en.json', 'src/lib/content/home.es.json', 'src/lib/content/home.fr.json'].map(fullHistory).join(' '),
+    `commit_0:object(oid:"${commitOid}"){... on Commit{status{contexts{context state targetUrl description}}}}`,
+    `commit_0:object(oid:"${commitOid}"){... on Commit{checkSuites(last:10){nodes{checkRuns(last:20){nodes{name status conclusion detailsUrl summary}}}}}}`,
+    `commit_0:object(oid:"${commitOid}"){... on Commit{deployments(last:10,orderBy:{field:CREATED_AT,direction:ASC}){nodes{environment latestStatus{state environmentUrl description}}}}}`
+  ]) expect(checkGraphql(read(selection), site).ok).toBe(true);
+});
+test('history and publish status stay closed outside content and exact shapes', () => {
+  for (const selection of [
+    fullHistory('package.json', 0),
+    fullHistory('src/routes/+page.svelte', 0),
+    fullHistory('src/lib/content/home.en.json', 0).replace('first:100', 'first:101'),
+    fullHistory('src/lib/content/home.en.json', 0).replace('committedDate', 'committedDate tree{oid}'),
+    `commit_0:object(oid:"${commitOid}"){... on Commit{status{contexts{context state targetUrl description}} tree{oid}}}`,
+    `commit_0:object(oid:"not-an-oid"){... on Commit{status{contexts{context state targetUrl description}}}}`
+  ]) expect(checkGraphql(read(selection), site).ok).toBe(false);
+});
 test('query variants fail closed', () => {
   const good = read('defaultBranchRef{name}');
   for (const body of [

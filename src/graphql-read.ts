@@ -14,7 +14,13 @@ const templates = [
   'batch_0:object(oid:"OID"){... on Blob{text isTruncated}}',
   'batch_0:ref(qualifiedName:$branch){target{... on Commit{history(first:1,path:"PATH"){nodes{author{name email user{id:databaseId login}} committedDate}}}}}',
   'batch_0:object(oid:"OID"){... on Commit{status{contexts{context state targetUrl description}} deployments(last:10,orderBy:{field:CREATED_AT,direction:ASC}){nodes{environment latestStatus{state environmentUrl description}}} checkSuites(last:10){nodes{checkRuns(last:20){nodes{name status conclusion detailsUrl summary}}}}}}',
-  'defaultBranchRef{name}', 'object(expression:$expression){oid}'
+  'defaultBranchRef{name}', 'object(expression:$expression){oid}',
+  // Captured from the pinned Sveltia 0.261.0, 2026-11-08: the History panel, and a save's publish status as three
+  // separate queries. Metadata only; paths stay content paths, and older file contents stay unreadable.
+  'batch_0:ref(qualifiedName:$branch){target{... on Commit{history(first:100,path:"PATH"){nodes{oid messageHeadline author{name email avatarUrl user{login}} committedDate}}}}}',
+  'batch_0:object(oid:"OID"){... on Commit{status{contexts{context state targetUrl description}}}}',
+  'batch_0:object(oid:"OID"){... on Commit{checkSuites(last:10){nodes{checkRuns(last:20){nodes{name status conclusion detailsUrl summary}}}}}}',
+  'batch_0:object(oid:"OID"){... on Commit{deployments(last:10,orderBy:{field:CREATED_AT,direction:ASC}){nodes{environment latestStatus{state environmentUrl description}}}}}'
 ].map(text => canonical(selection(text)));
 const fileReturn = canonical(selection('batch_0:file(path:"PATH"){oid}'));
 
