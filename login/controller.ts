@@ -11,7 +11,7 @@ export interface Ports {
   navigate: (path: string) => void;
   handOver: (token: string) => boolean;
 }
-const reserved = new Set(['auth', 'api', 'admin', 'login', 'editor', 'account', 'privacy', 'terms', 'legal']);
+const reserved = new Set(['auth', 'api', 'admin', 'login', 'editor', 'account', 'privacy', 'terms', 'legal', 'relay']);
 export const validTarget = (slug: string) => /^[a-z0-9][a-z0-9.-]{0,62}$/.test(slug) && !reserved.has(slug);
 
 export function createController(ports: Ports, popup: boolean, update: (state: State) => void) {
