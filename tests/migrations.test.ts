@@ -19,6 +19,20 @@ test('site migration adds sites, memberships and the log column, and seeds no cl
   db.close();
 });
 
+test('a removed site retires its slug, and no new site can take it', async () => {
+  const db = new Database(':memory:'); db.exec('PRAGMA foreign_keys = ON');
+  for (const name of ['0001_auth', '0002_edit_log', '0003_sites', '0004_people', '0005_invite_safeguards', '0006_alerts', '0007_code_budget', '0008_session_site', '0009_retired_slug']) db.exec(await Bun.file(`migrations/${name}.sql`).text());
+  db.exec(exampleSiteSql);
+  db.exec("INSERT INTO user VALUES ('member','Member','member@example.test',1,NULL,0,0); INSERT INTO membership (site_slug,user_id,role) VALUES ('example','member','owner')");
+  db.exec("DELETE FROM site WHERE slug = 'example'");
+  expect(db.query('SELECT count(*) AS n FROM membership').get()).toEqual({ n: 0 });
+  expect(db.query('SELECT slug FROM retired_slug').all()).toEqual([{ slug: 'example' }]);
+  expect(() => db.exec(exampleSiteSql)).toThrow('slug_retired');
+  db.exec(exampleSiteSql.replaceAll("'example'", "'example-two'"));
+  expect(db.query('SELECT count(*) AS n FROM site').get()).toEqual({ n: 1 });
+  db.close();
+});
+
 test('0005 confirms existing members and keeps old Worker additions usable', async () => {
   const db=new Database(':memory:'); db.exec('PRAGMA foreign_keys=ON');
   for(const name of ['0001_auth','0002_edit_log','0003_sites','0004_people']) db.exec(await Bun.file(`migrations/${name}.sql`).text());

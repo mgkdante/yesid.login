@@ -1,6 +1,8 @@
 import { validSlug } from '../src/sites.ts';
 
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+/** The operator's own projects share the App's account; a typo must never hand one to a client site. */
+const operatorProject = (repo: string) => /^yesid\./i.test(repo) || ['transit', 'yesid-portfolio'].includes(repo.toLowerCase());
 
 export function newClientSql(args: string[]): string {
   const fields = ['slug', 'owner', 'repo', 'branch', 'label', 'installation', 'person', 'role'];
@@ -17,6 +19,7 @@ export function newClientSql(args: string[]): string {
   if (!validSlug(slug!)) throw Error('Invalid slug');
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(owner!)) throw Error('Invalid owner');
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(repo!) || repo === '.' || repo === '..') throw Error('Invalid repo');
+  if (operatorProject(repo!)) throw Error('Refused repo: an operator project, never a client site');
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(branch!) || /\.\.|\/\/|@\{|\.lock(?:\/|$)|[/.]$|\/\./.test(branch!)) throw Error('Invalid branch');
   if (!/^[1-9][0-9]{0,14}$/.test(installation!)) throw Error('Invalid installation');
   if (role !== 'owner' && role !== 'it') throw Error('Invalid role: expected owner or it');

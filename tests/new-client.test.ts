@@ -29,7 +29,7 @@ test('missing person fails explicitly; existing person needs no internal ID', as
   db.close();
 });
 test('CLI rejects malformed and hostile input without SQL output', () => {
-  for (const [key,value] of [['slug','admin'],['owner',"x';--"],['repo','x/y'],['branch','a..b'],['branch','a.lock'],['installation','0'],['installation','1;DROP'],['person','a@b'],['person','x\n@example.test'],['role','employee'],['label','x\n-- SQL']]) {
+  for (const [key,value] of [['slug','admin'],['owner',"x';--"],['repo','x/y'],['branch','a..b'],['branch','a.lock'],['installation','0'],['installation','1;DROP'],['person','a@b'],['person','x\n@example.test'],['role','employee'],['label','x\n-- SQL'],['repo','yesid.login'],['repo','yesid.dev'],['repo','Yesid.Design'],['repo','transit'],['repo','yesid-portfolio']]) {
     const input = [...args]; input[input.indexOf(`--${key}`)+1] = value!;
     const result = Bun.spawnSync([process.execPath,'scripts/new-client.ts',...input]);
     expect(result.exitCode).not.toBe(0); expect(result.stdout.toString()).toBe(''); expect(result.stderr.toString()).toContain('new-client:');

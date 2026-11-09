@@ -155,7 +155,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, lookup: 
   }
   if (suffix === '/api/graphql') return handleGraphql(request, env, ctx, editor, site);
   const scoped = new URL(url); scoped.pathname = suffix;
-  return handleRest(request, scoped, env, editor, site);
+  return handleRest(request, scoped, env, ctx, editor, site);
 }
 /** True only when the client lists text/html with a quality above zero. */
 const acceptsHtml = (accept: string | null) => (accept ?? '').split(',').some(range => {
