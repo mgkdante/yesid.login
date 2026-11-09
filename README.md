@@ -114,10 +114,10 @@ Sveltia's `iRe` appends `/api/v3`; `aRe` appends `/api/graphql` to the configure
 `login/` is a Svelte 5 client app compiled by Vite to ignored `public/login/build/`.
 `/`, `/auth/popup` and `/<slug>/people` load it. Worker HTML references fixed filenames and is never cached;
 Cloudflare assets use their normal content-based deployment handling.
-`bun run deploy` copies the editor, builds login, runs tests and checks, then deploys.
+`bun run deploy` copies the editor, builds login, runs tests, checks and the real-browser run, then deploys. The operator runs it as `bun run release` (and `bun run release:staging`), which supplies a Cloudflare token limited to the yesid-login Workers, their D1 databases and routes on yesid.dev, read from 1Password by `op run` through the references in `deploy.env`.
 The build refuses Node versions other than 24 LTS. Bun runs installation and tests.
 
-The exact v0.36.1 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
+The exact v0.38.1 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
 `@yesid/seo-kit`, Svelte 5.57.2 and Satori 0.33.5. CSS order is tokens, Tailwind,
 UI base; the copied self-hosted font stylesheet loads separately. No SvelteKit router is needed.
 
