@@ -260,6 +260,11 @@ at most 300 per document. Pagination arguments and nested fields must match the 
 shapes. Commit returns allow only oid, committedDate and numbered content file OIDs;
 all existing commit input restrictions still apply.
 
+A capture on staging (2026-11-08) found two more read shapes the same bundle sends: the History panel's
+per-file history (up to 100 commits: OID, headline, author name, email and avatar, date), and a save's publish
+status as three separate Commit queries (status, check suites, deployments). Both are accepted in exactly that
+form. History paths must still be content paths, and the OIDs it returns do not open older file contents.
+
 REST tree responses retain content blobs and their ancestor trees, preserving other
 response fields. REST blobs and GraphQL Blob OID reads require membership in the site's
 current branch content tree. The recursive tree cache is keyed by owner/repo/branch,
