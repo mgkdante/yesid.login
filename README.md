@@ -32,7 +32,7 @@ This is the production sign-in service for [yesid.dev](https://yesid.dev) client
 | `/admin`, `/admin/` | Redirect to `/` |
 | `/editor/*`, `/login/*` | Worker-hosted static files |
 
-Slugs match `^[a-z0-9][a-z0-9.-]{0,62}$`. Reserved: `auth`, `api`, `admin`, `login`, `editor`, `account`, `privacy`, `terms`, `legal`. Unknown or invalid site routes return 404. Relay routes return 401 without a session and 403 without membership. The App token is limited to the site's installation and repository. The existing guards still constrain REST reads and commit branch, repository and file paths. Markdown is writable only directly inside a one-level collection folder, `src/lib/content/<name>/`, where `<name>` matches `^[a-z][a-z0-9-]*$`. This rule applies to every site, and reads use the same rule, so client sites must not keep anything private in such a folder.
+Slugs match `^[a-z0-9][a-z0-9.-]{0,62}$`. Reserved: `auth`, `api`, `admin`, `login`, `editor`, `account`, `privacy`, `terms`, `legal`, `relay`, and any retired slug. Unknown or invalid site routes return 404. Relay routes return 401 without a session and 403 without membership. The App token is limited to the site's installation and repository. The existing guards still constrain REST reads and commit branch, repository and file paths. Markdown is writable only directly inside a one-level collection folder, `src/lib/content/<name>/`, where `<name>` matches `^[a-z][a-z0-9-]*$`. This rule applies to every site, and reads use the same rule, so client sites must not keep anything private in such a folder.
 
 ## Add a site and a person
 
