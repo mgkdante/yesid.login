@@ -1,13 +1,14 @@
 import { exampleSiteSql } from '../scripts/example-fixture.ts';
 import { test, expect } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { readdirSync } from 'node:fs';
 import { retentionStatements, retainIps, scheduled, IP_CRON } from '../src/retention.ts';
 import type { Env } from '../src/env.ts';
 
 const now = '2026-11-07T12:00:00Z';
 async function fixture() {
   const db = new Database(':memory:'); db.exec('PRAGMA foreign_keys=ON');
-  for (const name of ['0001_auth', '0002_edit_log', '0003_sites', '0004_people', '0005_invite_safeguards', '0006_alerts', '0007_code_budget']) db.exec(await Bun.file(`migrations/${name}.sql`).text());
+  for (const name of readdirSync('migrations').filter(n => n.endsWith('.sql')).sort()) db.exec(await Bun.file(`migrations/${name}`).text());
   db.exec(exampleSiteSql);
   return db;
 }
@@ -19,6 +20,24 @@ function clean(db: Database) {
   }
 }
 const count = (db: Database, table: string) => (db.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n;
+
+test('a retired site row goes once retention has cleared its logs, and its slug stays retired', async () => {
+  const db = await fixture();
+  db.exec(`INSERT INTO user VALUES ('u','U','u@example.test',1,NULL,0,0);
+    INSERT INTO edit_log (editor_id,repository,branch,paths,site_slug,created_at) VALUES ('u','example-owner/example-site','main','[]','example','2025-11-07 11:59:59');
+    INSERT INTO people_log (site_slug,actor_id,action,target_id,created_at) VALUES ('example','u','add','u','2026-01-01 00:00:00')`);
+  db.exec("UPDATE site SET retired_at = '2026-02-01 00:00:00' WHERE slug = 'example'");
+  clean(db);
+  expect(count(db, 'site')).toBe(1);
+  db.exec("UPDATE people_log SET created_at = '2025-01-01 00:00:00'");
+  clean(db);
+  expect(count(db, 'site')).toBe(0);
+  expect(db.query('SELECT slug FROM retired_slug').all()).toEqual([{ slug: 'example' }]);
+  db.exec("INSERT INTO site (slug,owner,repo,branch,label,installation_id) VALUES ('live','o','r','main','Live','1')");
+  clean(db);
+  expect(count(db, 'site')).toBe(1);
+  db.close();
+});
 
 test('retention respects the exact 12 month instant in SQLite and ISO formats', async () => {
   const db = await fixture();
@@ -33,7 +52,7 @@ test('expired dates normalize for both auth tables; numeric budgets use seconds 
   const db = await fixture();
   db.exec("INSERT INTO user VALUES ('member','M','m@example.test',1,NULL,0,0); INSERT INTO membership(site_slug,user_id,role) VALUES ('example','member','owner')");
   for (const [index, date] of ['2026-11-07 11:59:59', '2026-11-07T11:59:59Z', now, '2026-11-07T13:00:01+01:00'].entries()) {
-    db.exec(`INSERT INTO session VALUES ('s${index}','${date}','t${index}',0,0,NULL,NULL,'member'); INSERT INTO verification VALUES ('v${index}','i','hash','${date}',0,0)`);
+    db.exec(`INSERT INTO session (id,expiresAt,token,createdAt,updatedAt,ipAddress,userAgent,userId) VALUES ('s${index}','${date}','t${index}',0,0,NULL,NULL,'member'); INSERT INTO verification VALUES ('v${index}','i','hash','${date}',0,0)`);
   }
   db.exec("INSERT INTO email_change_budget(user_id,started_at) VALUES ('member',unixepoch('2026-11-06 11:59:59')),('member',unixepoch('2026-11-06T12:00:00Z'))");
   db.exec("INSERT INTO rateLimit VALUES ('old','old',1,unixepoch('2026-11-06 12:59:59')*1000),('boundary','boundary',1,unixepoch('2026-11-06T13:00:00Z')*1000)");

@@ -10,7 +10,7 @@ export interface ClientSite extends Site {
 }
 export function findSite(db: D1Database, slug: string): Promise<ClientSite | null> {
   if (!validSlug(slug)) return Promise.resolve(null);
-  return db.prepare('SELECT slug, owner, repo, branch, label, installation_id FROM site WHERE slug = ?')
+  return db.prepare('SELECT slug, owner, repo, branch, label, installation_id FROM site WHERE slug = ? AND retired_at IS NULL')
     .bind(slug).first<Omit<ClientSite, 'contentFiles'>>().then(row => row ? { ...row, contentFiles: CONTENT_FILES } : null);
 }
 export const eligible = "(m.role IN ('owner','it') OR m.confirmed_at IS NOT NULL OR m.invited_at > datetime('now','-7 days'))";

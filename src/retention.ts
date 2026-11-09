@@ -20,6 +20,10 @@ export function retentionStatements(db: D1Database, now: string) {
     db.prepare("DELETE FROM email_change_budget WHERE started_at < unixepoch(?, '-1 day')").bind(now),
     db.prepare("DELETE FROM code_budget WHERE started_at < unixepoch(?, '-1 day')").bind(now),
     ipStatement(db, now),
+    // A retired site's row goes once no log refers to it; deleting it records the slug as retired for good.
+    db.prepare(`DELETE FROM site WHERE retired_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM edit_log WHERE site_slug = site.slug)
+      AND NOT EXISTS (SELECT 1 FROM people_log WHERE site_slug = site.slug)`),
     db.prepare(`DELETE FROM user WHERE NOT EXISTS (SELECT 1 FROM membership WHERE user_id = user.id)
       AND NOT EXISTS (SELECT 1 FROM edit_log WHERE editor_id = user.id)
       AND NOT EXISTS (SELECT 1 FROM people_log WHERE actor_id = user.id OR target_id = user.id)
