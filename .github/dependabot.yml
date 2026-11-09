@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      # Sveltia upgrades stay deliberate: its own PR, checked against the pinned session contract in the README.
+      sveltia:
+        patterns: ["@sveltia/*"]
+      dependencies:
+        patterns: ["*"]
+        exclude-patterns: ["@sveltia/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
