@@ -194,7 +194,12 @@ a dark media override. Tests render these emails in local Chromium only; they do
 `copy-editor` copies fr, es-CO and en-CA from the pinned Sveltia package to `/editor/locales/`. Boot rewrites only those exact pinned locale requests. Update discovery returns the installed version locally. CSP gains no origin. When browser and editor language differ, Sveltia can still offer the browser language; when they match, no offer is shown.
 
 Releases follow `AGENTS.md`: merged PR first, additive migrations before the Worker that needs them,
-then `bun run deploy`.
+then `bun run deploy:staging`, a real sign-in and save on staging, then `bun run deploy`.
+
+Staging is a separate copy, `[env.staging]` in `wrangler.toml`: its own Worker, D1 database, session secret
+and GitHub App, installed only on a sandbox repository whose `staging` branch points its `cms/config.yml` at
+`staging.login.yesid.dev`. A staging leak cannot reach a client repository. Every address other than
+`login.yesid.dev` answers with `X-Robots-Tag: noindex, nofollow`, decided by the host, not a setting.
 
 ## End-to-end check
 

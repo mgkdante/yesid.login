@@ -279,6 +279,13 @@ test('the first legal addresses redirect and keep the language', async () => {
     expect(moved.status).toBe(301); expect(moved.headers.get('Location')).toBe(`https://login.test/legal/${name}?lang=es`);
   }
 });
+test('only the production address may be indexed', async () => {
+  const at = (origin: string, path: string) => handler(new Request(origin + path, { redirect: 'manual' }), env(), ctx);
+  expect((await at('https://login.yesid.dev', '/legal/privacy')).headers.get('X-Robots-Tag')).toBeNull();
+  for (const path of ['/legal/privacy', '/', '/privacy', '/auth/sites', '/nope/']) {
+    expect((await at('https://staging.login.yesid.dev', path)).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+  }
+});
 test('legal shells work without a session, are indexable and retain script CSP', async () => {
   for (const path of ['/legal/privacy','/legal/terms']) {
     const response = await request(path,undefined,false); const html = await response.text();
