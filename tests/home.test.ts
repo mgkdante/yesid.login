@@ -1,5 +1,6 @@
 import { test, expect } from 'bun:test';
 import { createController, popupHandover, USER_KEY, validTarget, type Ports, type State } from '../login/controller.ts';
+import { RESERVED } from '../src/sites.ts';
 function fixture(search = '', responses: Response[] = []) {
   const navigations: string[] = [], calls: { url: string; init?: RequestInit }[] = [];
   const storage = new Map<string, string>();
@@ -107,6 +108,9 @@ test('no Svelte attribute hides a regex quantifier, which Svelte would read as a
 
 for (const slug of ['privacy','terms','legal']) test(`legal slug ${slug} cannot become a client target`, () => {
   expect(validTarget(slug)).toBe(false);
+});
+test('the sign-in screen refuses every slug the server reserves', () => {
+  for (const slug of RESERVED) expect(validTarget(slug)).toBe(false);
 });
 
 test('a single site is bound before its token is saved or editor opens', async () => {
