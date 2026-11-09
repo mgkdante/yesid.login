@@ -21,9 +21,17 @@ const TAP_MIN = 44;
 
 const wrangler = (...args: string[]) => ['bunx', 'wrangler', ...args];
 
+/** A release must fail, never wait forever: each local Wrangler command gets a minute, and the whole run ten. */
+const COMMAND_LIMIT_MS = 60_000;
+const RUN_LIMIT_MS = 10 * 60_000;
+let lastPassed = 'nothing yet';
+let workerPid: number | undefined;
+
 async function run(command: string[]): Promise<string> {
   const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe' });
-  const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  const limit = setTimeout(() => stop(child.pid), COMMAND_LIMIT_MS);
+  const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]).finally(() => clearTimeout(limit));
+  if (child.signalCode || (code !== 0 && !out && !err)) throw new Error(`${command.join(' ')} did not finish within ${COMMAND_LIMIT_MS / 1000} s`);
   if (code !== 0) throw new Error(`${command.join(' ')} failed:\n${err || out}`);
   return out;
 }
@@ -66,6 +74,7 @@ function stop(pid: number) {
 function check(name: string, passed: boolean, detail = '') {
   if (!passed) throw new Error(`FAILED: ${name}${detail ? ` (${detail})` : ''}`);
   console.info(`ok - ${name}`);
+  lastPassed = name;
 }
 
 const codeField = (page: Page) => page.locator('#code');
@@ -395,8 +404,14 @@ async function analyticsCounting(browser: Awaited<ReturnType<typeof chromium.lau
   await context.close();
 }
 
+const watchdog = setTimeout(() => {
+  if (workerPid) stop(workerPid);
+  console.error(`E2E stopped after ${RUN_LIMIT_MS / 60_000} minutes. Last check passed: ${lastPassed}`);
+  process.exit(1);
+}, RUN_LIMIT_MS);
 await prepare();
 const worker = await startWorker();
+workerPid = worker.pid;
 const browser = await chromium.launch();
 try {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' })).newPage();
@@ -423,4 +438,5 @@ try {
   await browser.close();
   stop(worker.pid);
   rmSync(VARS, { force: true });
+  clearTimeout(watchdog);
 }
