@@ -11,8 +11,27 @@ const REHEARSAL = 'The PR may rehearse on a release candidate but can merge only
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const design = name => name?.startsWith('@yesid/') && PACKAGES.has(name.slice(7));
 
+// A complete version operand cannot consume a package-name prefix such as v8.
+const OPERAND = /^v?(?:\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?|(?:\d+|[xX*])(?:\.(?:\d+|[xX*])){0,2})(?=$|\s|\|\||[/>])/;
+const PACKAGE = /^(?:@[a-zA-Z0-9][a-zA-Z0-9._-]*\/)?[a-zA-Z0-9][a-zA-Z0-9._-]*(?=$|[@/>\s])/;
+
+// Within a qualifier, > is a comparator when its complete operand is a version;
+// otherwise it introduces ancestry only when a complete package name follows.
+function qualifierBoundary(text) {
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] === '/') return { index };
+    if (text[index] !== '>') continue;
+    const tail = text.slice(index + 1).trimStart();
+    const operand = tail.startsWith('=') ? tail.slice(1).trimStart() : tail;
+    if (OPERAND.test(operand)) continue;
+    if (PACKAGE.test(tail)) return { index };
+    return { ambiguous: true };
+  }
+  return { index: -1 };
+}
+
 // Read a package before its qualifier. Comparators and spaces belong to the
-// qualifier; only > followed by a package name starts another pnpm selector.
+// qualifier; complete operand classification distinguishes pnpm ancestry.
 function target(key) {
   // An ambiguous terminal retains the last design identity and still requires its stable URL.
   const names = [...key.matchAll(/@yesid\/[a-z0-9._-]+/g)].map(match => match[0]).filter(design);
@@ -31,8 +50,9 @@ function target(key) {
     rest = rest.slice(name.length).trimStart();
     if (rest.startsWith('@')) {
       rest = rest.slice(1);
-      const boundary = rest.search(/\/|>\s*(?=@|(?!(?:v?\d|[xX*](?:\s|$)))[a-zA-Z_])/);
-      rest = boundary < 0 ? '' : rest.slice(boundary);
+      const boundary = qualifierBoundary(rest);
+      if (boundary.ambiguous) return { name: names.at(-1), selector: true, ambiguous: names.length > 0 };
+      rest = boundary.index < 0 ? '' : rest.slice(boundary.index);
     }
     if (!rest) return { name, selector };
     if (rest[0] !== '/' && rest[0] !== '>') {
