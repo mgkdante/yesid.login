@@ -15,19 +15,46 @@ const design = name => name?.startsWith('@yesid/') && PACKAGES.has(name.slice(7)
 const OPERAND = /^v?(?:\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?|(?:\d+|[xX*])(?:\.(?:\d+|[xX*])){0,2})(?=$|\s|\|\||[/>])/;
 const PACKAGE = /^(?:@[a-zA-Z0-9][a-zA-Z0-9._-]*\/)?[a-zA-Z0-9][a-zA-Z0-9._-]*(?=$|[@/>\s])/;
 
-// Within a qualifier, > is a comparator when its complete operand is a version;
-// otherwise it introduces ancestry only when a complete package name follows.
+// Parse the range left to right. An ancestry boundary is legal only after a
+// complete range term, never within a comparator operand or after an empty union.
 function qualifierBoundary(text) {
-  for (let index = 0; index < text.length; index++) {
-    if (text[index] === '/') return { index };
-    if (text[index] !== '>') continue;
-    const tail = text.slice(index + 1).trimStart();
-    const operand = tail.startsWith('=') ? tail.slice(1).trimStart() : tail;
-    if (OPERAND.test(operand)) continue;
-    if (PACKAGE.test(tail)) return { index };
-    return { ambiguous: true };
+  let index = 0;
+  let complete = false;
+  while (true) {
+    const space = /^\s*/.exec(text.slice(index))[0].length;
+    index += space;
+    if (index === text.length) return complete ? { index: -1 } : { ambiguous: true };
+    if (complete) {
+      if (text.startsWith('||', index)) {
+        index += 2;
+        complete = false;
+        continue;
+      }
+      const separator = text[index];
+      if (separator === '/' || separator === '>') {
+        const tail = text.slice(index + 1).trimStart();
+        const operand = tail.startsWith('=') ? tail.slice(1).trimStart() : tail;
+        if (separator === '/' || !OPERAND.test(operand)) {
+          return PACKAGE.test(tail.replace(/^(?:\*\*\/)+/, '')) ? { index } : { ambiguous: true };
+        }
+      }
+      if (!space) return { ambiguous: true };
+    }
+    const comparator = /^(?:>=|<=|>|<|=|~|\^)?\s*/.exec(text.slice(index))[0];
+    index += comparator.length;
+    const operand = OPERAND.exec(text.slice(index));
+    if (!operand) return { ambiguous: true };
+    index += operand[0].length;
+    const hyphen = /^\s+-\s+/.exec(text.slice(index));
+    if (hyphen) {
+      if (comparator.trim()) return { ambiguous: true };
+      index += hyphen[0].length;
+      const upper = OPERAND.exec(text.slice(index));
+      if (!upper) return { ambiguous: true };
+      index += upper[0].length;
+    }
+    complete = true;
   }
-  return { index: -1 };
 }
 
 // Read a package before its qualifier. Comparators and spaces belong to the
