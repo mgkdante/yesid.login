@@ -55,6 +55,8 @@ bunx wrangler d1 execute site-editor-login-proof --remote --command "SELECT coun
 
 Check that both counts are 1 without printing addresses. Remove a membership to revoke access to that site; delete the person's sessions to revoke sign-in. All three roles authorize editing.
 
+The script refuses the operator's own repositories (`yesid.*`, `transit`, `yesid-portfolio`), which share the App's account. Deleting a `site` row retires its slug (migration 0009): a database trigger records it in `retired_slug` and refuses any later site with that slug, so logs and edit history never mix two clients.
+
 Client data never goes into a migration or a tracked file. A test refuses any real-looking email address outside the operator's own domain and reserved example domains.
 
 Each client repository must contain `cms/config.yml`, with backend settings:
@@ -281,6 +283,7 @@ database itself is down the claim falls back to a per-isolate hour, so the alert
 Sends run in waitUntil work; alert failures log an address-free line, never recurse and never
 affect sign-in replies. When Resend is fully down, the alert cannot arrive and only the log
 remains. Publish-failure alerts are outside this slice.
+Every relayed GitHub reply is also checked against the installation's hourly budget, which all sites share: below 10% remaining, a `github-rate` alert goes out, at most once an hour.
 
 ## S15 review hardening
 

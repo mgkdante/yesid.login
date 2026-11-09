@@ -32,7 +32,7 @@ const commit = (repo = 'a', branch = 'main') => ({
 });
 beforeEach(async () => {
   db = new Database(':memory:'); db.exec('PRAGMA foreign_keys = ON');
-  for (const file of ['0001_auth.sql', '0002_edit_log.sql', '0003_sites.sql', '0004_people.sql', '0005_invite_safeguards.sql', '0006_alerts.sql', '0007_code_budget.sql', '0008_session_site.sql']) db.exec(await Bun.file('migrations/' + file).text());
+  for (const file of ['0001_auth.sql', '0002_edit_log.sql', '0003_sites.sql', '0004_people.sql', '0005_invite_safeguards.sql', '0006_alerts.sql', '0007_code_budget.sql', '0008_session_site.sql', '0009_retired_slug.sql']) db.exec(await Bun.file('migrations/' + file).text());
   db.exec(`INSERT INTO user VALUES ('a-user','A','a@example.test',1,NULL,0,0),('b-user','B','b@example.test',1,NULL,0,0);
     INSERT INTO site (slug,owner,repo,branch,label,installation_id) VALUES ('a','owner','a','main','Site A','fake-a'),('b','owner','b','draft','Site B','fake-b');
     INSERT INTO membership (site_slug,user_id,role) VALUES ('a','a-user','owner'),('b','b-user','employee')`);
@@ -278,6 +278,22 @@ test('the first legal addresses redirect and keep the language', async () => {
     const moved = await handler(new Request(`https://login.test/${name}?lang=es`,{redirect:'manual'}),env(),ctx);
     expect(moved.status).toBe(301); expect(moved.headers.get('Location')).toBe(`https://login.test/legal/${name}?lang=es`);
   }
+});
+test('the operator hears once an hour when the shared GitHub budget runs low', async () => {
+  const alerting = { ...env(), ALERT_EMAIL: 'admin@example.test', EMAIL_FROM: 'sender@example.test', RESEND_API_KEY: 'fake' } as Env;
+  const budget = (remaining: number) => { globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input); calls.push({ url, init });
+    if (url.includes('/access_tokens')) return Response.json({ token: 'token-a', expires_at: '2099-01-01T00:00:00Z' });
+    if (url.includes('api.resend.com')) return new Response('{}');
+    return Response.json([], { headers: { 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': String(remaining) } });
+  }) as unknown as typeof fetch; };
+  const commits = () => handler(new Request('https://login.test/a/api/v3/repos/owner/a/commits', { headers: { Authorization: 'Bearer fake-session' } }), alerting, ctx);
+  const alerts = () => calls.filter(call => call.url.includes('api.resend.com'));
+  budget(501); await commits(); await Promise.all(pending.splice(0));
+  expect(alerts()).toHaveLength(0);
+  budget(499); await commits(); await commits(); await Promise.all(pending.splice(0));
+  expect(alerts()).toHaveLength(1);
+  expect(String(alerts()[0]!.init?.body)).toContain('github-rate');
 });
 test('only the production address may be indexed', async () => {
   const at = (origin: string, path: string) => handler(new Request(origin + path, { redirect: 'manual' }), env(), ctx);

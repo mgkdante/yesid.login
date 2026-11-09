@@ -3,6 +3,7 @@ import type { ClientSite } from './sites.ts';
 import { editorProfile, forward, installationToken, withPushPermission, type Editor } from './github.ts';
 import { checkGraphql, checkRest, isContentPath, withEditor, type GraphqlBody } from './guard.ts';
 import { json, denied } from './responses.ts';
+import { alertFailure } from './alerts.ts';
 const REST_PREFIX = '/api/v3';
 /** GitHub's own limit per commit is about 16 MB of Base64, so this leaves room without being open-ended. */
 const MAX_GRAPHQL_BYTES = 20 * 1024 * 1024;
@@ -22,6 +23,13 @@ const relay = (response: Response): Response => {
   return new Response(response.body, { status: response.status === 401 ? 502 : response.status, headers });
 };
 
+
+/** Every Site shares one App installation, so one hourly budget: warn the operator before Clients notice. */
+const RATE_FLOOR = 0.1;
+function watchBudget(response: Response, env: Env, ctx: ExecutionContext): void {
+  const limit = Number(response.headers.get('x-ratelimit-limit')), remaining = response.headers.get('x-ratelimit-remaining');
+  if (limit > 0 && remaining !== null && Number(remaining) < limit * RATE_FLOOR) ctx.waitUntil(alertFailure(env, 'github-rate'));
+}
 
 interface TreeEntry { path: string; type: string; sha: string }
 interface Tree { tree: TreeEntry[]; truncated: boolean; [key: string]: unknown }
@@ -47,7 +55,7 @@ function filterTree(tree: Tree, site: ClientSite): Tree {
   return { ...tree, tree: tree.tree.filter(e => e.type === 'blob' ? isContentPath(e.path, site) : e.type === 'tree' && paths.some(path => path.startsWith(e.path + '/'))) };
 }
 
-export async function handleRest(request: Request, url: URL, env: Env, editor: Editor, site: ClientSite): Promise<Response> {
+export async function handleRest(request: Request, url: URL, env: Env, ctx: ExecutionContext, editor: Editor, site: ClientSite): Promise<Response> {
   const path = url.pathname.slice(REST_PREFIX.length);
   const decision = checkRest(request.method, path, site);
 
@@ -60,6 +68,7 @@ export async function handleRest(request: Request, url: URL, env: Env, editor: E
 
   const headers: HeadersInit = { Accept: request.headers.get('Accept') ?? 'application/vnd.github+json' };
   const response = await forward(`${path}${url.search}`, { method: 'GET', headers }, await githubToken(env, site));
+  watchBudget(response, env, ctx);
 
   if (path.includes('/git/trees/') && response.ok) {
     const tree = await response.json() as Tree;
@@ -107,6 +116,7 @@ export async function handleGraphql(request: Request, env: Env, ctx: ExecutionCo
     },
     await githubToken(env, site)
   );
+  watchBudget(response, env, ctx);
 
   if (!isCommit || !response.ok) return relay(response);
 

@@ -1,5 +1,5 @@
 import type { Env } from './env.ts';
-export type AlertKind = 'retention' | 'code-email' | 'welcome-email' | 'owner-notice' | 'old-address-notice';
+export type AlertKind = 'retention' | 'code-email' | 'welcome-email' | 'owner-notice' | 'old-address-notice' | 'github-rate';
 const HOUR_MS = 3600 * 1000;
 /** Used only when the database itself is down, which is when an alert matters most. */
 const isolateSent = new Map<AlertKind, number>();
