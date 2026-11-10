@@ -97,24 +97,11 @@ bun test tests
 
 Handler tests use SQLite-backed D1 fakes, fetch stubs, and a session resolver passed to a handler factory. Production always uses Better Auth; no environment flag can bypass authentication.
 
-## Pinned Sveltia session contract
-
-At 0.261.0, its localStorage wrapper JSON serializes `sveltia-cms.user`. The minimum restoration entry is `{ "backendName": "github", "token": "<signed Better Auth bearer>" }`. `G9e` accepts an object with a string `backendName`; `X9e` passes `token` and optional `refreshToken` to the backend's automatic sign-in. GitHub then calls `/user` and replaces the entry with the returned profile:
-
-```text
-{ backendName, id, name, login, email, avatarURL, profileURL, bot, token, refreshToken }
-```
-
-Undefined fields are omitted by JSON serialization. The bootstrap does not fabricate an identity. Every request still requires a server-validated signed session and membership. The browser token is a bearer credential accessible to same-origin scripts, so preserve CSP, the pinned bundle and origin ownership. Recheck this undocumented storage contract whenever upgrading Sveltia.
-
-Sveltia's `iRe` appends `/api/v3`; `aRe` appends `/api/graphql` to the configured per-site roots. Sveltia's sign-out writes `{}` through `V9e`; it does not revoke the server session. Boot keeps the token in memory and observes missing tokens via polling and cross-tab storage events, posts Better Auth sign-out and returns to `/`. Failed sign-out is shown and retried. Boot intercepts same-site relay 401 responses and returns to `/?site=<slug>`. Sveltia ordinarily surfaces API failures as errors and may show its sign-in screen. A full navigation on expiry discards in-memory unsaved work. No preservation guarantee is made for Sveltia's own drafts. Saving again requires signing back in.
-
 ## Sign-in app
 
 `login/` is a Svelte 5 client app compiled by Vite to ignored `public/login/build/`.
 `/`, `/auth/popup` and `/<slug>/people` load it. Worker HTML references fixed filenames and is never cached;
 Cloudflare assets use their normal content-based deployment handling.
-`bun run deploy` copies the editor, builds login, runs tests, checks and the real-browser run, then deploys. The operator runs it as `bun run release` (and `bun run release:staging`), which supplies a Cloudflare token limited to the yesid-login Workers, their D1 databases and routes on yesid.dev, read from 1Password by `op run` through the references in `deploy.env`.
 The build refuses Node versions other than 24 LTS. Bun runs installation and tests.
 
 The exact v0.39.1 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
@@ -144,7 +131,7 @@ these preferences. Login merges only `locale` and `theme`, mapping FR to `fr`, E
 and ES to `es-CO`. Other preferences remain intact. Recheck this undocumented contract when
 upgrading Sveltia. Its theme stylesheet and editor boot are unchanged.
 
-## People management (S13.2)
+## People management
 
 `/<slug>/people/members` requires the caller's signed session and Owner or IT membership on that site.
 GET lists only that site's people. POST accepts an email and always grants Employee access; existing
@@ -195,24 +182,42 @@ a dark media override. Tests render these emails in local Chromium only; they do
 
 `copy-editor` copies fr, es-CO and en-CA from the pinned Sveltia package to `/editor/locales/`. Boot rewrites only those exact pinned locale requests. Update discovery returns the installed version locally. CSP gains no origin. When browser and editor language differ, Sveltia can still offer the browser language; when they match, no offer is shown.
 
+## Deploy
+
 Releases follow `AGENTS.md`: merged PR first, additive migrations before the Worker that needs them,
-then `bun run deploy:staging`, a real sign-in and save on staging, then `bun run deploy`.
+then `bun run release:staging` (`bun run deploy:staging`), a real sign-in and save on staging, then `bun run release` (`bun run deploy`).
 
 Staging is a separate copy, `[env.staging]` in `wrangler.toml`: its own Worker, D1 database, session secret
 and GitHub App, installed only on a sandbox repository whose `staging` branch points its `cms/config.yml` at
 `staging.login.yesid.dev`. A staging leak cannot reach a client repository. Every address other than
 `login.yesid.dev` answers with `X-Robots-Tag: noindex, nofollow`, decided by the host, not a setting.
 
+`bun run deploy` copies the editor, builds login, runs tests, checks and the real-browser run, then deploys. The operator runs it as `bun run release` (and `bun run release:staging`), which supplies a Cloudflare token limited to the yesid-login Workers, their D1 databases and routes on yesid.dev, read from 1Password by `op run` through the references in `deploy.env`.
+
 ## End-to-end check
 
 `bun run test:e2e` signs in for real in a browser: the real Worker with a local database, a typed code, the editor, the People page, a wrong code, and a language change on step two. `bun run deploy` runs it first, because unit tests can't catch a page that refuses a valid code. It needs Node 24 on PATH for the build and a Playwright Chromium install (`bunx playwright-core install chromium`). Screenshots land in `.wrangler/e2e/shots`.
 
-## Legal pages, chrome and retention
+## Security model
+
+### Pinned Sveltia session contract
+
+At 0.261.0, its localStorage wrapper JSON serializes `sveltia-cms.user`. The minimum restoration entry is `{ "backendName": "github", "token": "<signed Better Auth bearer>" }`. `G9e` accepts an object with a string `backendName`; `X9e` passes `token` and optional `refreshToken` to the backend's automatic sign-in. GitHub then calls `/user` and replaces the entry with the returned profile:
+
+```text
+{ backendName, id, name, login, email, avatarURL, profileURL, bot, token, refreshToken }
+```
+
+Undefined fields are omitted by JSON serialization. The bootstrap does not fabricate an identity. Every request still requires a server-validated signed session and membership. The browser token is a bearer credential accessible to same-origin scripts, so preserve CSP, the pinned bundle and origin ownership. Recheck this undocumented storage contract whenever upgrading Sveltia.
+
+Sveltia's `iRe` appends `/api/v3`; `aRe` appends `/api/graphql` to the configured per-site roots. Sveltia's sign-out writes `{}` through `V9e`; it does not revoke the server session. Boot keeps the token in memory and observes missing tokens via polling and cross-tab storage events, posts Better Auth sign-out and returns to `/`. Failed sign-out is shown and retried. Boot intercepts same-site relay 401 responses and returns to `/?site=<slug>`. Sveltia ordinarily surfaces API failures as errors and may show its sign-in screen. A full navigation on expiry discards in-memory unsaved work. No preservation guarantee is made for Sveltia's own drafts. Saving again requires signing back in.
+
+### Legal pages, chrome and retention
 
 `/legal/privacy` and `/legal/terms` are public FR/EN/ES documents, following the structure, voice and reading layout of yesid.dev's legal pages. `/privacy` and `/terms` redirect there. The source is
 `login/legal/copy.ts`; keep its wording and version date deliberate. Legal documents
 allow indexing; login, popup, account, People, editor and HTML errors carry `noindex`.
-Every app footer links both documents. Sign-in carries no consent line, by Yesito's decision of 2026-11-07, so the terms' wording about accepting them by signing in is one for the lawyer to check (S14). API errors keep JSON.
+Every app footer links both documents. Sign-in carries no consent line, by Yesito's decision of 2026-11-07, so the terms' wording about accepting them by signing in is one for the lawyer to check. API errors keep JSON.
 People and account use Masthead. The construction props show on `login.yesid.dev/` only.
 Page modules load separately; all routes share one generated CSS file.
 
@@ -249,7 +254,7 @@ Deploying registers the Cron Trigger, which prunes for real. Only a D1 backup ca
 records; rolling back the Worker cannot. Remove the Cron Trigger if pruning must stop.
 
 
-## Security read boundaries and operational alerts (13.3)
+### Read boundaries and operational alerts
 
 GraphQL uses a closed parsed-AST read list for Sveltia 0.261.0: exactly one query,
 no fragment definitions or directives, and one unaliased repository root bound through
@@ -287,10 +292,10 @@ hour. It stores only kind and time. An alert Resend refuses gives its hour back,
 database itself is down the claim falls back to a per-isolate hour, so the alert is still tried.
 Sends run in waitUntil work; alert failures log an address-free line, never recurse and never
 affect sign-in replies. When Resend is fully down, the alert cannot arrive and only the log
-remains. Publish-failure alerts are outside this slice.
+remains. Publish-failure alerts are outside this coverage.
 Every relayed GitHub reply is also checked against the installation's hourly budget, which all sites share: below 10% remaining, a `github-rate` alert goes out, at most once an hour.
 
-## S15 review hardening
+### Sign-in hardening
 
 - Code requests and code checks take at least one second (`src/code-requests.ts`), so their
   duration cannot reveal whether an address has an account. Replies were already identical.
@@ -312,7 +317,7 @@ be used as a bearer; its signed form is required. Existing session IP/browser va
 with the eight-hour expiry and daily cleanup. Columns remain in place; no data migration is
 needed. The browser token still needs same-origin script protection.
 
-## Site-bound sessions
+### Site-bound sessions
 
 Apply additive migration `0008_session_site.sql` before this Worker. Existing sessions have no
 binding; after ten minutes they require a fresh code. New sessions can only list sites, bind,
