@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
 
 process.env.WRANGLER_SEND_METRICS = 'false';
-const PORT = 8799;
+const PORT = Number(process.env.LOGIN_E2E_PORT || 8799);
 const ORIGIN = `http://localhost:${PORT}`;
 const STATE = '.wrangler/e2e';
 const SHOTS = process.env.LOGIN_E2E_SHOTS || resolve(STATE, 'shots');
@@ -57,7 +57,7 @@ INSERT INTO user (id,name,email,emailVerified,createdAt,updatedAt) VALUES ('e2e-
 }
 
 async function startWorker() {
-  const worker = Bun.spawn(wrangler('dev', 'e2e/worker.ts', '--local', '--persist-to', STATE, '--env-file', VARS, '--port', String(PORT)), { stdout: 'ignore', stderr: 'ignore' });
+  const worker = Bun.spawn(wrangler('dev', 'e2e/worker.ts', '--local', '--persist-to', STATE, '--env-file', VARS, '--port', String(PORT), '--no-infer-origin-from-routes'), { stdout: 'ignore', stderr: 'ignore' });
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const ready = await fetch(ORIGIN).then((response) => response.ok, () => false);
     if (ready) return worker;
