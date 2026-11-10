@@ -186,6 +186,9 @@ a dark media override. Tests render these emails in local Chromium only; they do
 
 ## Deploy
 
+Pull requests reach `main` through its merge queue: enqueue one with `gh pr merge --auto --squash`, and the
+queue reruns the required `verify` check on the combined change before squash-merging it.
+
 Standard releases follow `AGENTS.md`: merged PR first, additive migrations before the Worker that needs them,
 then `bun run release:staging` (`bun run deploy:staging`), a real sign-in and save on staging, then `bun run release` (`bun run deploy`).
 
