@@ -186,7 +186,7 @@ a dark media override. Tests render these emails in local Chromium only; they do
 
 ## Deploy
 
-Releases follow `AGENTS.md`: merged PR first, additive migrations before the Worker that needs them,
+Standard releases follow `AGENTS.md`: merged PR first, additive migrations before the Worker that needs them,
 then `bun run release:staging` (`bun run deploy:staging`), a real sign-in and save on staging, then `bun run release` (`bun run deploy`).
 
 Staging is a separate copy, `[env.staging]` in `wrangler.toml`: its own Worker, D1 database, session secret
@@ -195,6 +195,54 @@ and GitHub App, installed only on a sandbox repository whose `staging` branch po
 `login.yesid.dev` answers with `X-Robots-Tag: noindex, nofollow`, decided by the host, not a setting.
 
 `bun run deploy` copies the editor, builds login, runs tests, checks and the real-browser run, then deploys. The operator runs it as `bun run release` (and `bun run release:staging`), which supplies a Cloudflare token limited to the yesid-login Workers, their D1 databases and routes on yesid.dev, read from 1Password by `op run` through the references in `deploy.env`.
+
+### Deploy now
+
+By the 2026-11-10 owner rule, the owner may ship a chosen commit after a build only,
+without tests, required checks or waiting. Plain `bun run release:now` deploys the current
+checkout to production. It copies the editor and builds login, then deploys; it skips
+tests, `check`, the browser run and staging. `bun run release:now:staging` targets staging.
+The `release:now` commands supply the scoped token through 1Password; `deploy:now` and
+`deploy:now:staging` expect credentials to be supplied by the caller.
+
+Never deploy from a dirty tree. To deploy a chosen commit, replace the SHA below and run
+this PowerShell block from the repository. Node 24 and 1Password CLI must be available.
+The temporary worktree must contain the deploy-now scripts (older commits may not).
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$env:PATH = "C:\Users\otalo\Yesito\projects\brand\yesid.static-template\.tools;$env:PATH"
+$deploySha = '<sha>'
+$deploySource = (Get-Location).Path
+if (git status --porcelain) { throw 'Start from a clean tree.' }
+git fetch origin
+if ($LASTEXITCODE -ne 0) { throw 'Fetch failed.' }
+$deployWorktree = Join-Path $env:TEMP ("yesid-login-deploy-" + [guid]::NewGuid())
+git worktree add --detach $deployWorktree $deploySha
+if ($LASTEXITCODE -ne 0) { throw 'Worktree creation failed.' }
+try {
+    Set-Location $deployWorktree
+    bun install --frozen-lockfile
+    if ($LASTEXITCODE -ne 0) { throw 'Install failed.' }
+    if (git status --porcelain) { throw 'Refusing to deploy a dirty tree.' }
+    bun run release:now
+    if ($LASTEXITCODE -ne 0) { throw 'Deploy failed.' }
+} finally {
+    Set-Location $deploySource
+    git worktree remove $deployWorktree
+    if ($LASTEXITCODE -ne 0) { throw 'Worktree cleanup failed; inspect it before removing it.' }
+}
+```
+
+This path does **not apply D1 migrations**. If the chosen commit needs a new migration,
+apply it first: migrations still come before the Worker that needs them. Worker rollback
+is `bunx wrangler rollback` (`--env staging` for staging); it does not undo D1 migrations.
+
+`deploy:now` passes `--env=""`, so it always targets the production Worker, even if
+`CLOUDFLARE_ENV` is set in the shell. There is no GitHub workflow for this path: a workflow
+would install and build the chosen commit on the same runner that later holds the Cloudflare
+token, so the chosen code could read the token or change the deploy target. The token stays
+on the operator's machine.
 
 ## End-to-end check
 
