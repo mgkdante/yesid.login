@@ -1,6 +1,6 @@
 import { sessionSite } from './session-site.ts';
 import { scheduled } from './retention.ts';
-import { publicHtml } from './pages.ts';
+import { SECURITY_HEADERS, publicHtml } from './pages.ts';
 import { createAuth, codeDelivery, AUTH_BASE_PATH } from './auth.ts';
 import { account, ACCOUNT_PATHS } from './account.ts';
 import { confirmInvitations, retryNotices } from './invitations.ts';
@@ -179,11 +179,24 @@ function indexing(request: Request, response: Response): Response {
 }
 /** Dependency injection for session resolution, with no environment-controlled bypass. */
 export const createHandler = (lookup: SessionLookup = currentEditor) => async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
-  try { return indexing(request, await route(request, env, ctx, lookup)); }
+  let response: Response;
+  try {
+    const url = new URL(request.url);
+    if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+      url.protocol = 'https:';
+      response = request.method === 'GET' || request.method === 'HEAD'
+        ? Response.redirect(url.href, 301) : denied('HTTPS required', 403);
+    } else response = await route(request, env, ctx, lookup);
+  }
   catch (error) {
     // Only the error's kind: a message can carry an address or a path.
     console.error('Request failed', error instanceof Error ? error.name : 'unknown');
-    return indexing(request, denied('Service temporarily unavailable', 502));
+    response = denied('Service temporarily unavailable', 502);
   }
+  const copy = new Response(response.body, response);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    if (name === 'Strict-Transport-Security' || name === 'Permissions-Policy' || !copy.headers.has(name)) copy.headers.set(name, value);
+  }
+  return indexing(request, copy);
 };
 export default { fetch: createHandler(), scheduled } satisfies ExportedHandler<Env>;

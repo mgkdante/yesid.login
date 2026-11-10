@@ -83,7 +83,7 @@ bun run build:login # Node 24 LTS must be on PATH
 bun scripts/seed-local.ts
 bunx wrangler d1 migrations apply site-editor-login-proof --local --persist-to .wrangler/s13-local
 bunx wrangler d1 execute site-editor-login-proof --local --persist-to .wrangler/s13-local --file .wrangler/s13-fixture/seed.sql
-bunx wrangler dev --local --persist-to .wrangler/s13-local --env-file .dev.vars.s13 --port 8787
+bunx wrangler dev --local --persist-to .wrangler/s13-local --env-file .dev.vars.s13 --port 8787 --no-infer-origin-from-routes
 ```
 
 The helper writes only fake data and an exclusive-create gitignored `.dev.vars.s13`. It refuses to overwrite it. To repeat a session seed, reuse the generated seed SQL while its session is unexpired. `.wrangler/s13-fixture/browser.json` contains the fake signed Sveltia entry to set under `login.session.example` on localhost. It is not a real credential. This fixture never sends a real email or reaches GitHub because the App key is deliberately invalid. Use a browser-only config fixture for Sveltia rendering; do not add a production bypass to the Worker. Generated Sveltia and font files are ignored and copied from exact installed packages. No generated admin config remains.
@@ -103,6 +103,8 @@ Handler tests use SQLite-backed D1 fakes, fetch stubs, and a session resolver pa
 `/`, `/auth/popup` and `/<slug>/people` load it. Worker HTML references fixed filenames and is never cached;
 Cloudflare assets use their normal content-based deployment handling.
 The build refuses Node versions other than 24 LTS. Bun runs installation and tests.
+The browser suite defaults to localhost:8799; set `LOGIN_E2E_PORT` to a free local port
+when another development session is using it.
 
 The exact v0.39.1 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
 `@yesid/seo-kit`, Svelte 5.57.2 and Satori 0.33.5. CSS order is tokens, Tailwind,
@@ -255,6 +257,18 @@ records; rolling back the Worker cannot. Remove the Cron Trigger if pruning must
 
 
 ### Read boundaries and operational alerts
+
+The Worker redirects HTTP GET/HEAD to the same HTTPS URL with status 301 and refuses other
+HTTP methods with 403 before routing. Localhost, 127.0.0.1 and [::1] remain available over HTTP
+for development. Local Wrangler commands must set `--no-infer-origin-from-routes` so route inference does not
+forward the production hostname into the Worker. Enforcement lives in the Worker because Cloudflare's zone-wide Always Use HTTPS
+setting would affect every yesid.dev host.
+
+Every response carries HSTS (`max-age=63072000; includeSubDomains`, without preload) and
+Permissions-Policy disabling camera, microphone and geolocation. Missing headers default to
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`.
+Existing page and asset CSPs are preserved exactly.
 
 GraphQL uses a closed parsed-AST read list for Sveltia 0.261.0: exactly one query,
 no fragment definitions or directives, and one unaliased repository root bound through
