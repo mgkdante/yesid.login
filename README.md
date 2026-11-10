@@ -238,17 +238,11 @@ This path does **not apply D1 migrations**. If the chosen commit needs a new mig
 apply it first: migrations still come before the Worker that needs them. Worker rollback
 is `bunx wrangler rollback` (`--env staging` for staging); it does not undo D1 migrations.
 
-The manual **Deploy now** GitHub Actions workflow accepts a commit SHA or branch in `ref`
-and `production` (default) or `staging` in `environment`. It checks out that ref, installs,
-copies the editor, builds and deploys with the same skips and no migration step. Its job
-summary records the resolved SHA and Wrangler version ID. Runs serialize per environment.
-GitHub Environment rules can require reviewers or restrict access; the workflow itself
-does not wait for CI or require checks.
-
-It cannot deploy until `CLOUDFLARE_API_TOKEN` exists as an environment secret in each of
-`production` and `staging`. Provisioning it changes the documented rule that no Cloudflare
-credential lives in GitHub; that is Yesito's call. No environments or secrets are provisioned
-by this change.
+`deploy:now` passes `--env=""`, so it always targets the production Worker, even if
+`CLOUDFLARE_ENV` is set in the shell. There is no GitHub workflow for this path: a workflow
+would install and build the chosen commit on the same runner that later holds the Cloudflare
+token, so the chosen code could read the token or change the deploy target. The token stays
+on the operator's machine.
 
 ## End-to-end check
 

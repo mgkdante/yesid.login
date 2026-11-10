@@ -18,7 +18,7 @@
     "deploy:staging": "bun run copy-editor && bun run build:login && bun test tests && bun run check && bun run test:e2e && wrangler deploy --env staging",
     "release:staging": "op run --env-file=deploy.env -- bun run deploy:staging",
     "release": "op run --env-file=deploy.env -- bun run deploy",
-    "deploy:now": "bun run copy-editor && bun run build:login && wrangler deploy",
+    "deploy:now": "bun run copy-editor && bun run build:login && wrangler deploy --env=\"\"",
     "deploy:now:staging": "bun run copy-editor && bun run build:login && wrangler deploy --env staging",
     "release:now": "op run --env-file=deploy.env -- bun run deploy:now",
     "release:now:staging": "op run --env-file=deploy.env -- bun run deploy:now:staging"
