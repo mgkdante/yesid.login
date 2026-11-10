@@ -251,6 +251,17 @@ records; rolling back the Worker cannot. Remove the Cron Trigger if pruning must
 
 ## Security read boundaries and operational alerts (13.3)
 
+The Worker redirects HTTP GET/HEAD to the same HTTPS URL with status 301 and refuses other
+HTTP methods with 403 before routing. Localhost, 127.0.0.1 and [::1] remain available over HTTP
+for development. Enforcement lives in the Worker because Cloudflare's zone-wide Always Use HTTPS
+setting would affect every yesid.dev host.
+
+Every response carries HSTS (`max-age=63072000; includeSubDomains`, without preload) and
+Permissions-Policy disabling camera, microphone and geolocation. Missing headers default to
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`.
+Existing page and asset CSPs are preserved exactly.
+
 GraphQL uses a closed parsed-AST read list for Sveltia 0.261.0: exactly one query,
 no fragment definitions or directives, and one unaliased repository root bound through
 owner/repo variables to the authenticated site. Only the captured branch history,

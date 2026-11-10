@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, afterEach, test, expect } from 'bun:test';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHmac, generateKeyPairSync } from 'node:crypto';
+import { EDITOR_HEADERS, LOGIN_HEADERS } from '../src/pages.ts';
 import { createHandler } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { confirmSignOut } from '../src/responses.ts';
@@ -14,10 +15,15 @@ const ctx = { waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown a
 const statement = (sql: string, args: unknown[] = []): unknown => ({
   bind: (...values: unknown[]) => statement(sql, values),
   first: async () => db.query(sql).get(...args as string[]),
-  all: async () => ({ results: db.query(sql).all(...args as string[]) }),
+  all: async () => {
+    const results = db.query(sql).all(...args as string[]);
+    const meta = db.query('SELECT changes() AS changes, last_insert_rowid() AS last_row_id').get();
+    return { results, meta };
+  },
+  raw: async () => db.query(sql).values(...args as string[]),
   run: async () => { const result = db.query(sql).run(...args as string[]); return { meta: { changes: result.changes } }; }
 });
-const env = () => ({ DB: { prepare: (sql: string) => statement(sql), batch: (statements: { run(): unknown }[]) => { db.exec('BEGIN'); return (async () => { try { const results = []; for (const item of statements) results.push(await item.run()); db.exec('COMMIT'); return results; } catch (error) { db.exec('ROLLBACK'); throw error; } })(); } }, GITHUB_APP_ID: 'fake-app',
+const env = () => ({ DB: { prepare: (sql: string) => statement(sql), exec: async (sql: string) => { db.exec(sql); }, batch: (statements: { all(): unknown }[]) => { db.exec('BEGIN'); return (async () => { try { const results = []; for (const item of statements) results.push(await item.all()); db.exec('COMMIT'); return results; } catch (error) { db.exec('ROLLBACK'); throw error; } })(); } }, GITHUB_APP_ID: 'fake-app',
   GITHUB_APP_PRIVATE_KEY: privateKey, ASSETS: { fetch: () => new Response('asset') }
 }) as unknown as Env;
 const handler = createHandler(async request => request.headers.has('Authorization') ? { siteSlug: 'a', id: 'a-user', name: 'Private name', email: 'private@example.test' } : undefined);
@@ -384,4 +390,87 @@ test('a leftover cookie never breaks a save or a People change', async () => {
   const added = await withCookie('/a/people/members', { email: 'cookie-check@example.test' });
   expect(added.status).toBe(200);
   expect(db.query("SELECT count(*) AS n FROM user WHERE email='cookie-check@example.test'").get()).toEqual({ n: 1 });
+});
+
+const expectSecurityHeaders = (response: Response) => {
+  expect(response.headers.get('Strict-Transport-Security')).toBe('max-age=63072000; includeSubDomains');
+  expect(response.headers.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=()');
+  expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+  expect(response.headers.get('Content-Security-Policy')).toBeTruthy();
+};
+
+for (const method of ['GET', 'HEAD']) test(`HTTP ${method} redirects to HTTPS with its query`, async () => {
+  const response = await handler(new Request('http://login.test/?lang=en&site=a', { method }), env(), ctx);
+  expect(response.status).toBe(301);
+  expect(response.headers.get('Location')).toBe('https://login.test/?lang=en&site=a');
+  expectSecurityHeaders(response);
+});
+
+test('HTTP POST is refused before auth, database or fetch work', async () => {
+  const e = env();
+  let prepares = 0;
+  e.DB = { prepare: () => { prepares++; throw new Error('Database must not be used'); } } as unknown as D1Database;
+  const response = await handler(new Request('http://login.test/auth/api/sign-in/email-otp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+  }), e, ctx);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ message: 'HTTPS required' });
+  expect(prepares).toBe(0);
+  expect(calls).toHaveLength(0);
+  expectSecurityHeaders(response);
+});
+
+for (const host of ['localhost', '127.0.0.1', '[::1]']) test(`HTTP ${host} stays available for local development`, async () => {
+  const response = await handler(new Request(`http://${host}:8799/`), env(), ctx);
+  expect(response.status).toBe(200);
+  expect(response.headers.has('Location')).toBe(false);
+  expectSecurityHeaders(response);
+});
+
+for (const [path, status] of [['/', 200], ['/legal/privacy', 200], ['/a/config.yml', 401], ['/nope/', 404], ['/privacy', 301], ['/editor/boot.js', 200]] as const) {
+  test(`security headers cover ${path}`, async () => {
+    const response = await request(path, undefined, false);
+    expect(response.status).toBe(status);
+    expectSecurityHeaders(response);
+  });
+}
+
+for (const signed of [false, true]) test(`security headers cover Better Auth get-session, signed=${signed}`, async () => {
+  const e = env(); e.BETTER_AUTH_SECRET = 'fixture-only-secret-with-at-least-32-characters';
+  const token = 'header-fixture-session';
+  const signature = createHmac('sha256', e.BETTER_AUTH_SECRET).update(token).digest('base64');
+  db.exec("INSERT INTO session (id,expiresAt,token,createdAt,updatedAt,userId) VALUES ('header-session',9999999999999,'header-fixture-session',0,0,'a-user')");
+  const response = await handler(new Request('https://login.test/auth/api/get-session', {
+    headers: signed ? { Authorization: `Bearer ${token}.${signature}` } : {}
+  }), e, ctx);
+  expect(response.status).toBe(200);
+  const body = await response.json() as { user: { id: string } } | null;
+  if (signed) expect(body?.user.id).toBe('a-user');
+  else expect(body).toBeNull();
+  expectSecurityHeaders(response);
+  expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+});
+
+test('security headers cover catch-all errors', async () => {
+  const e = env(); e.ASSETS = { fetch: () => { throw new Error('asset failure'); } } as unknown as Fetcher;
+  const response = await handler(new Request('https://login.test/editor/boot.js'), e, ctx);
+  expect(response.status).toBe(502);
+  expectSecurityHeaders(response);
+});
+
+test('security wrapper preserves page and asset policies exactly', async () => {
+  expect((await request('/')).headers.get('Content-Security-Policy')).toBe(LOGIN_HEADERS['Content-Security-Policy']);
+  expect((await request('/a/')).headers.get('Content-Security-Policy')).toBe(EDITOR_HEADERS['Content-Security-Policy']);
+  const e = env();
+  const asset = Response.redirect('https://login.test/editor/target.js', 302);
+  e.ASSETS = { fetch: () => asset } as unknown as Fetcher;
+  expectSecurityHeaders(await handler(new Request('https://login.test/editor/boot.js'), e, ctx));
+  const policy = "default-src 'self'; object-src 'none'";
+  e.ASSETS = { fetch: () => new Response('asset', { headers: {
+    'Content-Security-Policy': policy, 'Referrer-Policy': 'same-origin', 'X-Content-Type-Options': 'nosniff'
+  } }) } as unknown as Fetcher;
+  const response = await handler(new Request('https://login.test/editor/boot.js'), e, ctx);
+  expect(response.headers.get('Content-Security-Policy')).toBe(policy);
+  expect(response.headers.get('Referrer-Policy')).toBe('same-origin');
 });
