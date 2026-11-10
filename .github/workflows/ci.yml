@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
 # Tests only. No secrets and no Cloudflare credential: deploys run from the operator's machine.
 permissions:
