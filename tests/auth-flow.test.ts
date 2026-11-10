@@ -139,7 +139,7 @@ test('every address the People page accepts can receive a sign-in code', async (
   for (const email of ['a/b@example.test', 'x@y.c', 'x@a.123']) {
     expect((await manage('POST', '/people/members', { email })).status).toBe(400);
   }
-  for (const email of ['plain@example.test', 'first.last+tag@sub.example.ca']) {
+  for (const email of ['plain@example.test', 'first.last+tag@sub.example.test']) {
     expect((await manage('POST', '/people/members', { email })).status).toBe(200);
     db.exec('DELETE FROM rateLimit; DELETE FROM email_change_budget');
     expect((await requestCode(email)).status).toBe(200);
