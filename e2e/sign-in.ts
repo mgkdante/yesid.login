@@ -314,7 +314,7 @@ async function capture(page: Page, name: string) {
       capitalization: input.getAttribute('autocapitalize'), correction: input.getAttribute('autocorrect'), spelling: input.spellcheck };
   }));
   for (const input of inputs) {
-    check('input text at least 16 px: ' + name + ' ' + input.id, input.size >= 16, String(input.size));
+    check('input text 16 to 17 px: ' + name + ' ' + input.id, input.size >= 16 && input.size <= 17, String(input.size));
     const purpose = input.id === 'code' ? 'one-time-code' : new URL(page.url()).pathname.endsWith('/people') ? 'off' : 'email';
     check('native field purpose: ' + name + ' ' + input.id, input.name === input.id && input.autocomplete === purpose);
     if (input.id === 'email') check('email editing stays literal: ' + name,

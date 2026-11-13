@@ -24,7 +24,7 @@ h1 { font-size: var(--text-title); line-height: 1.15; font-weight: 700; margin-b
 .lead { color: var(--muted-foreground); margin-bottom: 1rem; overflow-wrap: anywhere; }
 form, .sites { display: grid; gap: 1rem; }
 label { font-size: var(--text-small); font-weight: 600; }
-input { min-width: 0; width: 100%; min-height: var(--size-tap-min); padding: 0.75rem 1rem; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--card); color: var(--foreground); font: inherit; font-size: 16px; }
+input { min-width: 0; width: 100%; min-height: var(--size-tap-min); padding: 0.75rem 1rem; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--card); color: var(--foreground); font: inherit; font-size: max(1rem, var(--text-body)); }
 input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .message { margin-top: 0.75rem; color: var(--foreground); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
