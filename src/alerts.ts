@@ -25,7 +25,8 @@ export async function alertFailure(env: Env, kind: AlertKind, status?: number): 
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: env.ALERT_EMAIL, subject: 'Login service failure', text: `Failure: ${kind}${status === undefined ? '' : `; HTTP ${status}`}` }),
+      // Notices to the Operator stay French until a recipient language preference exists.
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: env.ALERT_EMAIL, subject: 'Défaillance du service Login', text: `Défaillance : ${kind}${status === undefined ? '' : `; HTTP ${status}`}` }),
       signal: AbortSignal.timeout(10000)
     });
     sent = response.ok;

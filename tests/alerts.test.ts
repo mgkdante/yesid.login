@@ -14,6 +14,10 @@ test('retention failure sends a private throttled alert in waitUntil', async () 
     await scheduled({} as ScheduledController, env, ctx); await Promise.all(pending.splice(0));
     await scheduled({} as ScheduledController, env, ctx); await Promise.all(pending.splice(0));
     expect(sent).toHaveLength(1); expect(sent[0]).toContain('retention'); expect(sent[0]).not.toContain('private detail');
+    const message = JSON.parse(sent[0]);
+    expect(message.subject).toBe('Défaillance du service Login');
+    expect(message.text).toBe('Défaillance : retention');
+    expect(message.to).toBe(env.ALERT_EMAIL);
   } finally { globalThis.fetch = original; db.close(); }
 });
 

@@ -396,7 +396,7 @@ for (const unavailable of [false,true]) test(`code failure alert stays in backgr
  codeDelivery(new Request('https://login.test'),alertEnv,{waitUntil:(p:Promise<unknown>)=>pending.push(p)} as unknown as ExecutionContext)('alert-member@example.test','123456','sign-in');
  expect(pending).toHaveLength(1); await Promise.all(pending);
  expect(sent).toHaveLength(2);
- expect(sent[1].text).toBe(unavailable?'Failure: code-email':'Failure: code-email; HTTP 503');
+ expect(sent[1].text).toBe(unavailable?'Défaillance : code-email':'Défaillance : code-email; HTTP 503');
 });
 
 test('sign-in verification also keeps its IP budget',async()=>{
@@ -415,7 +415,7 @@ test('Owner notice refusal alerts without exposing the invitation',async()=>{
  const sent:Record<string,unknown>[]=[];
  globalThis.fetch=(async(_url:unknown,init?:RequestInit)=>{const body=JSON.parse(String(init?.body));sent.push(body);return new Response('',{status:body.to==='admin@example.test'?200:503});}) as typeof fetch;
  await confirmInvitations({...env,ALERT_EMAIL:'admin@example.test'},user.id);
- expect(sent[1].text).toBe('Failure: owner-notice; HTTP 503');
+ expect(sent[1].text).toBe('Défaillance : owner-notice; HTTP 503');
 });
 
 test('old-address refusal alerts in background after a successful email change',async()=>{
@@ -425,5 +425,5 @@ test('old-address refusal alerts in background after a successful email change',
  globalThis.fetch=(async(_url:unknown,init?:RequestInit)=>{const body=JSON.parse(String(init?.body));sent.push(body);return new Response('',{status:body.to==='admin@example.test'?200:503});}) as typeof fetch;
  const response=await account(new Request('https://login.test/auth/api/email-otp/change-email',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({newEmail:'changed-alert@example.test',otp})}),{...env,ALERT_EMAIL:'admin@example.test'},{waitUntil:(p:Promise<unknown>)=>pending.push(p)} as unknown as ExecutionContext,auth());
  expect(response.status).toBe(200); expect(pending).toHaveLength(1); await Promise.all(pending);
- expect(sent[1].text).toBe('Failure: old-address-notice; HTTP 503');
+ expect(sent[1].text).toBe('Défaillance : old-address-notice; HTTP 503');
 });

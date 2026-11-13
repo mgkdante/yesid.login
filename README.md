@@ -351,7 +351,8 @@ the filtered tree prevents their normal discovery. Tests use local fixtures and 
 
 ALERT_EMAIL is a Worker variable set to admin@yesid.dev. Retention batch failures and
 Resend refusal or unreachability for code, welcome, Owner and old-address mail queue an
-English admin alert. Text contains only the failure kind and HTTP status when available.
+French admin alert. Text contains only the failure kind and HTTP status when available.
+Owner notices and alerts to the Operator stay French until a recipient language preference exists.
 The additive alert_throttle table atomically claims one alert attempt per kind per rolling
 hour. It stores only kind and time. An alert Resend refuses gives its hour back, and when the
 database itself is down the claim falls back to a per-isolate hour, so the alert is still tried.
