@@ -380,7 +380,7 @@ test('welcome refusal queues an admin alert without changing the warning reply',
  const response=await handler(new Request('https://login.test/a/people/members',{method:'POST',headers:{Authorization:'Bearer fake','Content-Type':'application/json'},body:JSON.stringify({email:'new-alert@example.test'})}),e,ctx);
  expect(await response.json()).toEqual({success:true,emailSent:false});
  await Promise.all(pending.splice(0));
- expect(sent[1].text).toBe('Défaillance : welcome-email; HTTP 422');
+ expect(sent[1].text).toBe('Failure: welcome-email; HTTP 422');
 });
 test('a leftover cookie never breaks a save or a People change', async () => {
   const withCookie = (path: string, body: unknown) => handler(new Request('https://login.test' + path, {
