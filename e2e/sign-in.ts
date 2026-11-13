@@ -228,8 +228,8 @@ async function peopleCorrectness(page: Page) {
       await page.setViewportSize({ width, height: 844 });
       let mode = 'unchanged';
       await page.route('**/example/people/members', route => route.request().method() === 'GET'
-        ? route.fulfill(mode === 'load' ? { status: 502, json: {} } : { json: mode === 'single' ? members.slice(0, 1) : members })
-        : route.fulfill(mode === 'update' ? { status: 502, json: {} } : { json: { success: true, outcome: mode === 'mail' ? 'added' : 'unchanged', emailSent: false } }));
+        ? route.fulfill(['load', 'mail-load'].includes(mode) ? { status: 502, json: {} } : { json: mode === 'single' ? members.slice(0, 1) : members })
+        : route.fulfill(mode === 'update' ? { status: 502, json: {} } : { json: { success: true, outcome: mode.startsWith('mail') ? 'added' : 'unchanged', status: mode === 'pending' ? 'pending' : 'active', emailSent: false } }));
       await page.goto(`${ORIGIN}/example/people?lang=${lang}`);
       const first = page.locator('.people-list li').first();
       const remove = first.getByRole('button').last();
@@ -245,6 +245,7 @@ async function peopleCorrectness(page: Page) {
       await page.locator('.people-list li').nth(1).getByRole('button').last().click();
       check(`LOG-4 only one question ${lang}/${width}`, await page.locator('.people-list [role="group"]').count() === 1 && await first.getByRole('group').count() === 0);
       await page.locator('.people-list [role="group"]').getByRole('button').last().click();
+      if (width === 390) await lastPeopleQuestion(page, lang);
       const submit = async () => {
         await page.locator('#email').fill('person0@example.test');
         await page.locator('form button[type="submit"]').click();
@@ -261,7 +262,8 @@ async function peopleCorrectness(page: Page) {
       await first.getByRole('group').getByRole('button').last().click();
       mode = 'mail'; await submit();
       const link = page.getByRole('status').getByRole('link'); await link.waitFor();
-      check(`LOG-4 shareable link ${lang}/${width}`, await link.getAttribute('href') === 'https://login.yesid.dev/example/');
+      check(`LOG-4 shareable link ${lang}/${width}`, await link.getAttribute('href') === ORIGIN + '/example/');
+      await peopleOutcomeChecks(page, lang, width, value => { mode = value; }, submit);
       mode = 'update'; await submit();
       const updateFailure = await page.getByRole('status').innerText();
       mode = 'single'; await page.reload(); await page.locator('#email').waitFor();
@@ -273,6 +275,30 @@ async function peopleCorrectness(page: Page) {
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });
+}
+async function lastPeopleQuestion(page: Page, lang: 'fr' | 'en' | 'es') {
+  const row = page.locator('.people-list li').nth(24);
+  const remove = row.getByRole('button').last();
+  await remove.click();
+  const question = row.getByRole('group'); await question.waitFor();
+  check(`LOG-4 row 25 question visible ${lang}/390`, await question.evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+  check(`LOG-4 focus enters row 25 question ${lang}/390`, await question.evaluate(el => el === document.activeElement));
+  await page.screenshot({ path: resolve(SHOTS, `log-4-row25-${lang}-390.png`) });
+  await page.keyboard.press('Tab'); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+  check(`LOG-4 row 25 cancel restores focus ${lang}/390`, await remove.evaluate(el => el === document.activeElement));
+}
+async function peopleOutcomeChecks(page: Page, lang: 'fr' | 'en' | 'es', width: number, setMode: (mode: string) => void, submit: () => Promise<void>) {
+  setMode('pending'); await submit();
+  const pending = { en: 'An invitation is already pending for this address.', fr: 'Une invitation est déjà en attente pour cette adresse.', es: 'Ya hay una invitación pendiente para esta dirección.' }[lang];
+  await page.getByRole('status').filter({ hasText: pending }).waitFor();
+  check(`LOG-4 unchanged pending invitation ${lang}/${width}`, await page.getByRole('status').innerText() === pending);
+  setMode('mail-load'); await submit();
+  const status = page.getByRole('status'), link = status.getByRole('link'); await link.waitFor();
+  const failure = { en: 'We could not load people with access. Try again.', fr: 'Impossible de charger les personnes ayant accès. Réessayez.', es: 'No pudimos cargar las personas con acceso. Inténtalo de nuevo.' }[lang];
+  await status.getByText(failure, { exact: true }).waitFor();
+  check(`LOG-4 refresh failure follows editor link ${lang}/${width}`, await link.evaluate((el, message) => el.parentElement?.nextElementSibling?.textContent === message, failure));
+  setMode('unchanged'); await submit();
+  check(`LOG-4 next action clears refresh failure ${lang}/${width}`, !(await status.innerText()).includes(failure) && await status.getByRole('link').count() === 0);
 }
 async function accountFlow(page: Page) {
   await page.goto(`${ORIGIN}/account?lang=en`);

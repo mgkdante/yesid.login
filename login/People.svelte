@@ -14,10 +14,10 @@
   type Member = { id: string; email: string; role: 'owner' | 'employee' | 'it'; status: 'pending' | 'active' | 'expired'; lastEdit: string | null };
   let members = $state<Member[]>([]), email = $state(''), busy = $state(true);
   let message = $state(text.loading), allowed = $state(false), removing = $state<Member>();
-  let adding = $state(false), shareLink = $state(false);
+  let adding = $state(false), shareLink = $state(false), loadFailure = $state('');
   let removeTrigger: HTMLButtonElement | undefined;
-  const editorLink = 'https://login.yesid.dev/' + slug + '/';
-  function startAction() { message = ''; shareLink = false; removing = undefined; }
+  const editorLink = location.origin + '/' + slug + '/';
+  function startAction() { message = ''; shareLink = false; loadFailure = ''; removing = undefined; }
   async function askRemove(member: Member, trigger: HTMLButtonElement) {
     startAction(); adding = false; removing = member; removeTrigger = trigger;
     await tick();
@@ -26,11 +26,11 @@
   }
   async function cancelRemove() { removing = undefined; await tick(); removeTrigger?.focus(); }
   const peopleCount = (n: number) => `${n} ${new Intl.PluralRules(locale).select(n) === 'one' ? text.singular : text.plural}`;
-  const labels = { fr: { pending: 'En attente', active: 'Confirmé', expired: 'Expiré', add: 'Ajouter', confirm: 'Confirmer', back: 'Retour', last: 'Dernière modification', account: 'Changer mon courriel' }, en: { pending: 'Pending', active: 'Confirmed', expired: 'Expired', add: 'Add', confirm: 'Confirm', back: 'Back', last: 'Last edit', account: 'Change my email' }, es: { pending: 'Pendiente', active: 'Confirmado', expired: 'Vencido', add: 'Añadir', confirm: 'Confirmar', back: 'Volver', last: 'Última edición', account: 'Cambiar mi correo' } }[locale];
+  const labels = { fr: { pending: 'En attente', active: 'Confirmé', expired: 'Expiré', add: 'Ajouter', confirm: 'Confirmer', back: 'Retour', last: 'Dernière modification', account: 'Changer mon courriel' }, en: { pending: 'Pending', active: 'Confirmed', expired: 'Expired', add: 'Add', confirm: 'Confirm', back: 'Back', last: 'Last edit', account: 'Change my email' }, es: { pending: 'Pendiente', active: 'Confirmado', expired: 'Vencido', add: 'Agregar', confirm: 'Confirmar', back: 'Volver', last: 'Última edición', account: 'Cambiar mi correo' } }[locale];
   // The database stores UTC as `YYYY-MM-DD HH:MM:SS`.
   const last = (value: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value.replace(' ', 'T') + 'Z'));
   let siteLabel = $state('');
-  const extra = { fr: ['Gérez les accès à votre site.', 'Renouveler', 'Aucune personne pour le moment.', 'personnes', 'Accès réservé', 'Page indisponible'], en: ['Manage access to your site.', 'Renew', 'No people yet.', 'people', 'Restricted page', 'Page unavailable'], es: ['Gestiona el acceso a tu sitio.', 'Renovar', 'Aún no hay personas.', 'personas', 'Página restringida', 'Página no disponible'] }[locale];
+  const extra = { fr: ['Gérez les accès à votre site.', 'Renouveler', 'Aucune personne pour le moment.', 'Accès réservé', 'Page indisponible'], en: ['Manage access to your site.', 'Renew', 'No people yet.', 'Restricted page', 'Page unavailable'], es: ['Gestiona el acceso a tu sitio.', 'Renovar', 'Aún no hay personas.', 'Página restringida', 'Página no disponible'] }[locale];
   function renew(address: string) { startAction(); email = address; adding = true; document.querySelector('.people-add')?.scrollIntoView(); }
   let token = '';
   const signIn = () => location.replace('/?site=' + encodeURIComponent(slug));
@@ -57,16 +57,16 @@
   }
   async function change(method: 'POST' | 'DELETE', id = '') {
     if (busy) return;
-    message = ''; shareLink = false; busy = true;
+    message = ''; shareLink = false; loadFailure = ''; busy = true;
     try {
       const result = await request(method, id);
       if (method === 'POST' && !['added', 'renewed', 'unchanged'].includes(result.outcome)) throw Error(text.failed);
       email = ''; adding = false; removing = undefined;
       shareLink = method === 'POST' && result.outcome !== 'unchanged' && result.emailSent === false;
-      message = method === 'DELETE' ? text.done : result.outcome === 'unchanged' ? text.unchanged
+      message = method === 'DELETE' ? text.done : result.outcome === 'unchanged' ? (result.status === 'pending' ? text.pendingInvitation : text.unchanged)
         : result.outcome === 'renewed' ? (shareLink ? text.renewedMail : text.renewed) : (shareLink ? text.mail : text.added);
       try { members = await request(); }
-      catch { message += ' ' + text.loadFailed; }
+      catch { loadFailure = text.loadFailed; }
       if (method === 'DELETE') { await tick(); document.getElementById('people-count')?.focus(); }
     } catch (error) { message = error instanceof Error ? error.message : text.failed; }
     finally { busy = false; }
@@ -92,7 +92,7 @@
           {/if}</li>
         {/each}
       </ul>{#if !members.length}<Card class="form-card"><p>{extra[2]}</p></Card>{/if}</section></div>
-    {:else if !busy}<ErrorPage status={message === text.forbidden ? 403 : 502} label="yesid. | login" heading={message === text.forbidden ? extra[4] : extra[5]} body={message} suggestions={[{ href: "/" + slug + "/", label: text.back }, { href: "/account?site=" + slug + "&lang=" + locale, label: labels.account }]} />{/if}
-    {#if allowed || busy}<p class="message state-panel" role="status">{message}{#if shareLink} <a href={editorLink}>{editorLink}</a>{/if}</p>{/if}
+    {:else if !busy}<ErrorPage status={message === text.forbidden ? 403 : 502} label="yesid. | login" heading={message === text.forbidden ? extra[3] : extra[4]} body={message} suggestions={[{ href: "/" + slug + "/", label: text.back }, { href: "/account?site=" + slug + "&lang=" + locale, label: labels.account }]} />{/if}
+    {#if allowed || busy}<div class="message state-panel" role="status">{#if message || shareLink}<p>{message}{#if shareLink} <a href={editorLink}>{editorLink}</a>{/if}</p>{/if}{#if loadFailure}<p>{loadFailure}</p>{/if}</div>{/if}
   </main>
 </Chrome>

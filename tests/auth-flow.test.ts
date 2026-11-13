@@ -433,13 +433,15 @@ test('LOG-4: invitation outcomes distinguish added, renewed and unchanged access
   globalThis.fetch = (async () => { sends++; return Response.json({ id: 'sent' }); }) as unknown as typeof fetch;
   const invite = () => manage('POST', '/people/members', { email: 'outcome@example.test' }).then(r => r.json());
   expect(await invite()).toEqual({ success: true, outcome: 'added', emailSent: true });
-  expect(await invite()).toEqual({ success: true, outcome: 'unchanged', emailSent: false });
+  expect(await invite()).toEqual({ success: true, outcome: 'unchanged', status: 'pending', emailSent: false });
   expect(sends).toBe(1);
+  expect(db.query('SELECT count(*) AS n FROM people_log').get()).toEqual({ n: 1 });
   db.exec("UPDATE membership SET invited_at=datetime('now','-8 days') WHERE site_slug='a'");
   expect(await invite()).toEqual({ success: true, outcome: 'renewed', emailSent: true });
   db.exec("UPDATE membership SET confirmed_at=datetime('now') WHERE site_slug='a'");
-  expect(await invite()).toEqual({ success: true, outcome: 'unchanged', emailSent: false });
+  expect(await invite()).toEqual({ success: true, outcome: 'unchanged', status: 'active', emailSent: false });
   expect(sends).toBe(2);
+  expect(db.query('SELECT count(*) AS n FROM people_log').get()).toEqual({ n: 2 });
 });
 
 test('LOG-4: email refusal and network failure preserve explicit access outcomes', async () => {
@@ -450,5 +452,21 @@ test('LOG-4: email refusal and network failure preserve explicit access outcomes
     db.exec("UPDATE membership SET invited_at=datetime('now','-8 days') WHERE confirmed_at IS NULL");
     const renewed = await manage('POST', '/people/members', { email: fails + '@example.test' });
     expect(await renewed.json()).toEqual({ success: true, outcome: 'renewed', emailSent: false });
+  }
+});
+
+
+test('LOG-4: unchanged Owner and IT access is active, sends no mail and adds no audit row', async () => {
+  for (const role of ['owner', 'it']) {
+    const email = role + '-unchanged@example.test';
+    await manage('POST', '/people/members', { email });
+    db.query("UPDATE membership SET role = ? WHERE user_id = (SELECT id FROM user WHERE email = ?)").run(role, email);
+    const before = db.query('SELECT count(*) AS n FROM people_log').get();
+    let sends = 0;
+    globalThis.fetch = (async () => { sends++; return Response.json({}); }) as unknown as typeof fetch;
+    const reply = await manage('POST', '/people/members', { email });
+    expect(await reply.json()).toEqual({ success: true, outcome: 'unchanged', status: 'active', emailSent: false });
+    expect(sends).toBe(0);
+    expect(db.query('SELECT count(*) AS n FROM people_log').get()).toEqual(before);
   }
 });
