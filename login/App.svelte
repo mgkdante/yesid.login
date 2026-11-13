@@ -62,13 +62,13 @@
     {#if view.step === 'ask'}
       <Card class="form-card"><form onsubmit={send}>
         <label for="email">{text.email}</label>
-        <input id="email" type="email" autocomplete="email" required bind:value={email} />
+        <input id="email" name="email" type="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="email" required bind:value={email} />
         <Button type="submit" size="cta" disabled={view.busy}>{text.send}</Button>
       </form></Card>
     {:else if view.step === 'enter'}
       <Card class="form-card"><form onsubmit={event => { event.preventDefault(); void verify(); }}>
         <label for="code">{text.code}</label>
-        <input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]&#123;6&#125;" required maxlength="6" bind:value={code} bind:this={codeInput} />
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]&#123;6&#125;" required maxlength="6" bind:value={code} bind:this={codeInput} />
         <Button type="submit" size="cta" disabled={view.busy}>{text.verify}</Button>
       </form></Card>
       <div class="step-actions"><button disabled={view.busy} onclick={resend}>{text.resend}</button><button disabled={view.busy} onclick={back}>{text.change}</button></div>

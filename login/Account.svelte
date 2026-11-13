@@ -58,8 +58,8 @@
     <p class="label-station">{step === 'ask' ? '1 / 3' : step === 'current' ? '2 / 3' : '3 / 3'} · {steps[step === 'ask' ? 0 : step === 'current' ? 1 : 2]}</p>
     {#if step !== 'done'}
       <Card class="form-card"><form onsubmit={event => { event.preventDefault(); void submit(); }}>
-        {#if step === 'ask'}<label for="email">{common.email}</label><input id="email" type="email" autocomplete="email" required bind:value={email} />
-        {:else}<p class="confirm-address">{step === 'current' ? currentEmail : email}</p><label for="code">{common.code}</label><input id="code" bind:this={codeInput} inputmode="numeric" autocomplete="one-time-code" pattern={'[0-9]{6}'} maxlength="6" required bind:value={code} />{/if}
+        {#if step === 'ask'}<label for="email">{common.email}</label><input id="email" name="email" type="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="email" required bind:value={email} />
+        {:else}<p class="confirm-address">{step === 'current' ? currentEmail : email}</p><label for="code">{common.code}</label><input id="code" name="code" bind:this={codeInput} inputmode="numeric" autocomplete="one-time-code" pattern={'[0-9]{6}'} maxlength="6" required bind:value={code} />{/if}
         <Button type="submit" size="cta" disabled={busy}>{step === 'ask' ? common.send : text.save}</Button>
       </form></Card>
     {/if}

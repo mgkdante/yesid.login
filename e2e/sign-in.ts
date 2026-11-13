@@ -307,6 +307,19 @@ async function checkContrast(page: Page, name: string) {
 }
 async function capture(page: Page, name: string) {
   check('no horizontal scroll: ' + name, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  // LOG-1: presentation of S-3/S-4 and A-3/A-4/A-5 fields; their validation and proofs stay unchanged.
+  const inputs = await page.locator('main input:visible').evaluateAll(nodes => nodes.map(node => {
+    const input = node as HTMLInputElement;
+    return { id: input.id, size: parseFloat(getComputedStyle(input).fontSize), name: input.name, autocomplete: input.autocomplete,
+      capitalization: input.getAttribute('autocapitalize'), correction: input.getAttribute('autocorrect'), spelling: input.spellcheck };
+  }));
+  for (const input of inputs) {
+    check('input text at least 16 px: ' + name + ' ' + input.id, input.size >= 16, String(input.size));
+    const purpose = input.id === 'code' ? 'one-time-code' : new URL(page.url()).pathname.endsWith('/people') ? 'off' : 'email';
+    check('native field purpose: ' + name + ' ' + input.id, input.name === input.id && input.autocomplete === purpose);
+    if (input.id === 'email') check('email editing stays literal: ' + name,
+      input.capitalization === 'none' && input.correction === 'off' && !input.spelling);
+  }
   await checkContrast(page,name);
   const file = name + '.png'; await page.screenshot({ path: resolve(SHOTS, file), fullPage: true }); captures.push(file);
 }
