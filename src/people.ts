@@ -34,6 +34,8 @@ async function add(request: Request, env: Env, site: ClientSite, actor: string, 
   const db = env.DB;
   try {
     const result = await db.batch([
+      // D1 batches are transactions: classify the pre-change membership in the same snapshot.
+      db.prepare('SELECT m.role FROM membership m JOIN user u ON u.id = m.user_id WHERE m.site_slug = ? AND u.email = ?').bind(site.slug, email),
       db.prepare(`INSERT INTO user (id,name,email,emailVerified,createdAt,updatedAt)
         VALUES (?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now')) ON CONFLICT(email) DO NOTHING`).bind(crypto.randomUUID(), site.label, email),
       db.prepare(`INSERT INTO membership (site_slug,user_id,role,invited_at) SELECT ?, id, 'employee', datetime('now') FROM user WHERE email = ?
@@ -42,8 +44,9 @@ async function add(request: Request, env: Env, site: ClientSite, actor: string, 
       db.prepare(`INSERT INTO people_log (site_slug,actor_id,action,target_id)
         SELECT ?, ?, 'add', id FROM user WHERE email = ? AND changes() > 0`).bind(site.slug, actor, email)
     ]);
-    const added = result[2].meta.changes > 0;
-    return json({ success: true, emailSent: added ? await welcome(request, env, site, email, ctx) : true });
+    const changed = result[3].meta.changes > 0;
+    const outcome = !changed ? 'unchanged' : result[0].results.length ? 'renewed' : 'added';
+    return json({ success: true, outcome, emailSent: changed ? await welcome(request, env, site, email, ctx) : false });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     if (message.includes('people_capacity')) return denied('Site full', 409);

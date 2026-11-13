@@ -220,6 +220,60 @@ async function invitationFlow(page: Page) {
   await page.locator('li').filter({ hasText: 'employee@example.test' }).waitFor({ state: 'detached' });
   await employee.context().close();
 }
+// LOG-4 changes People only; existing journeys retain S-1/S-5 and H-1/H-2 coverage.
+async function peopleCorrectness(page: Page) {
+  const members = Array.from({ length: 25 }, (_, i) => ({ id: `synthetic-${i}`, email: `person${i}@example.test`, role: 'employee', status: 'active', lastEdit: null }));
+  for (const lang of ['fr', 'en', 'es'] as const) {
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 844 });
+      let mode = 'unchanged';
+      await page.route('**/example/people/members', route => route.request().method() === 'GET'
+        ? route.fulfill(mode === 'load' ? { status: 502, json: {} } : { json: mode === 'single' ? members.slice(0, 1) : members })
+        : route.fulfill(mode === 'update' ? { status: 502, json: {} } : { json: { success: true, outcome: mode === 'mail' ? 'added' : 'unchanged', emailSent: false } }));
+      await page.goto(`${ORIGIN}/example/people?lang=${lang}`);
+      const first = page.locator('.people-list li').first();
+      const remove = first.getByRole('button').last();
+      await remove.click();
+      const question = first.getByRole('group');
+      await question.waitFor();
+      check(`LOG-4 row 1 question visible ${lang}/${width}`, await question.evaluate(el => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+      check(`LOG-4 focus enters question ${lang}/${width}`, await question.evaluate(el => el === document.activeElement));
+      await page.screenshot({ path: resolve(SHOTS, `log-4-${lang}-${width}.png`) });
+      await page.keyboard.press('Tab'); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+      check(`LOG-4 cancel restores focus ${lang}/${width}`, await remove.evaluate(el => el === document.activeElement));
+      await remove.click();
+      await page.locator('.people-list li').nth(1).getByRole('button').last().click();
+      check(`LOG-4 only one question ${lang}/${width}`, await page.locator('.people-list [role="group"]').count() === 1 && await first.getByRole('group').count() === 0);
+      await page.locator('.people-list [role="group"]').getByRole('button').last().click();
+      const submit = async () => {
+        await page.locator('#email').fill('person0@example.test');
+        await page.locator('form button[type="submit"]').click();
+        await page.locator('.people-add [role="group"]').getByRole('button').first().click();
+        if (mode === 'update') await page.getByRole('status').filter({ hasText: { en: 'We could not complete', fr: 'Impossible d’effectuer', es: 'No pudimos completar' }[lang] }).waitFor();
+        else await page.locator('#email').waitFor();
+      };
+      await submit();
+      const expected = { en: 'This person already has access.', fr: 'Cette personne a déjà accès au site.', es: 'Esta persona ya tiene acceso al sitio.' }[lang];
+      await page.getByRole('status').filter({ hasText: expected }).waitFor();
+      check(`LOG-4 unchanged result ${lang}/${width}`, await page.getByRole('status').innerText() === expected);
+      await remove.click();
+      check(`LOG-4 clears old result ${lang}/${width}`, await page.getByRole('status', { includeHidden: true }).textContent() === '');
+      await first.getByRole('group').getByRole('button').last().click();
+      mode = 'mail'; await submit();
+      const link = page.getByRole('status').getByRole('link'); await link.waitFor();
+      check(`LOG-4 shareable link ${lang}/${width}`, await link.getAttribute('href') === 'https://login.yesid.dev/example/');
+      mode = 'update'; await submit();
+      const updateFailure = await page.getByRole('status').innerText();
+      mode = 'single'; await page.reload(); await page.locator('#email').waitFor();
+      check(`LOG-4 singular count ${lang}/${width}`, (await page.locator('#people-count').textContent())?.trim() === '1 ' + { en: 'person', fr: 'personne', es: 'persona' }[lang]);
+      check(`LOG-4 no edit on record ${lang}/${width}`, await page.locator('.person-meta').innerText() === { en: 'No edit on record', fr: 'Aucune modification enregistrée', es: 'Sin ediciones registradas' }[lang]);
+      mode = 'load'; await page.reload(); await page.locator('[data-slot="error-page"]').waitFor();
+      check(`LOG-4 separate load/update failures ${lang}/${width}`, !(await page.locator('[data-slot="error-page"]').innerText()).includes(updateFailure));
+      await page.unroute('**/example/people/members');
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+}
 async function accountFlow(page: Page) {
   await page.goto(`${ORIGIN}/account?lang=en`);
   await page.waitForURL(`${ORIGIN}/`);
@@ -427,6 +481,7 @@ try {
   await keepsItsPlaceWhenLanguageChanges(page);
   await navbarIsWhole(page);
   await invitationFlow(page);
+  await peopleCorrectness(page);
   await expiresInBrowser(page);
   await accountFlow(page);
   await visualMatrix(page);
