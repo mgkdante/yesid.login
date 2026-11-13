@@ -73,3 +73,7 @@ a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
 .people-add > a, .sites + a { white-space: normal; text-align: center; height: auto; }
 .people-layout > * { min-width: 0; }
+
+.legal-toc a, .article-body a { text-decoration: underline; text-underline-offset: 0.2em; }
+.legal-toc { margin-block: 2rem; }
+.legal-toc a { display: inline-block; padding-block: 0.25rem; }
