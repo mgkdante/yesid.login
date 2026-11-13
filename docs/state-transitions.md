@@ -42,9 +42,9 @@ Retained context is nonsecret: an address the person typed and timestamps. A cod
 **Blocked storage.** Each rule says what happens when a read, write or removal throws.
 - **Restorable context** (`login.pending`, `login.account.<slug>`, `login.language`): a failed write never stops the current screen. It only loses what a reload or a language change would have restored, and the person is told once, near the task, with the storage warning in the copy.
 - **The editor session** (`login.session.<slug>`): writing it is a prerequisite for opening the editor directly (H-2). If the write fails, the editor does not open.
-- **Removals:** a failed removal never turns a server success into a reported failure. The page keeps going from the server's outcome and remembers in memory that the record is void. If a void record comes back after a reload, the worst case is a restored screen whose next server request fails with that request's normal, neutral reply. A stale `login.session.<slug>` is either still the person's own valid session or already rejected by the server (401), and every 401 sends the person to sign in.
+- **Removals:** a failed removal never turns a server success into a reported failure. The page keeps going from the server's outcome and remembers in memory that the record is void. If a void record comes back after a reload, it restores a screen for the same tab and person. Its code may still work until it expires on the server or is consumed, and every server request gets its normal reply. Nothing is revealed that the person did not already see. A stale `login.session.<slug>` is either still the person's own valid session or already rejected by the server (401), and every 401 sends the person to sign in.
 
-**Reading a record.** A record is used only if it parses, has every field with the right type, its `step` or `stage` is one this document defines, `sentAt <= now`, and `expiresAt` equals `sentAt + 300000` and is not more than 5 minutes ahead of now. Any other record is removed and treated as absent. A new record always replaces the old one whole. Records are never merged.
+**Reading a record.** A `login.pending` or `login.account.<slug>` record is used only if it parses, has every field with the right type, its `step` or `stage` is one this document defines, `sentAt <= now`, and `expiresAt` equals `sentAt + 300000` and is not more than 5 minutes ahead of now. Any other record is removed and treated as absent. A new record always replaces the old one whole. Records are never merged.
 
 **Reload and language change are the same event.** The language toggle reloads the page with `?lang=`, so every reload rule below also applies to a language change.
 
@@ -199,9 +199,9 @@ Account lives at `/account?site=<slug>` and needs the stored token for that site
 - On a 400 or another failure: stay on A3 with the digits kept, and offer Start again (A-6).
 - On a lost response: say the change may have happened, and offer "Sign in with your new email" and "Sign in with your current email".
 
-**A-6. Back, Request another code, and Start again.** Each clears the digits and replaces the record whole.
-- **In A2:** Request another code repeats A1's request for the same new address (A-3). Back returns to A1 with the address kept and the record replaced by stage `address`.
-- **In A3:** a code cannot be sent alone, because the current-address code is consumed. Request another code, Back and Start again all return to A1 with the new address kept and the record replaced by stage `address`. A new current-address code is needed, and a short note says so, so a second code to the current address is no surprise.
+**A-6. Back, Request another code, and Start again.** A record is always replaced whole, never edited.
+- **In A2:** Request another code repeats A1's request for the same new address. On 2xx it stays on A2, clears the digits, replaces the record with stage `current` and a new deadline, and focuses the field. On any failure it stays on A2 with the digits and the record unchanged, and shows the S-12 message or the A1 failure message. Back and Start again both return to A1 with the address kept, the digits cleared and the record replaced by stage `address`.
+- **In A3:** a code cannot be sent alone, because the current-address code is consumed. Request another code, Back and Start again all return to A1 with the new address kept, the digits cleared and the record replaced by stage `address`. A new current-address code is needed, and a short note says so, so a second code to the current address is no surprise.
 - Another tab can request a code for the same person and replace this tab's challenge. The next check then fails with the neutral S-6 reply, and Start again recovers.
 
 **A-7. Deadlines.** At the local deadline in A2 or A3, the stage stays with the deadline message and Request another code (A-6). The digits stay, and the submit action is disabled.
