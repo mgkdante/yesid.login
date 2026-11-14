@@ -265,8 +265,10 @@ Its port is the base plus its zero-based shard index, including when run alone.
 Use `bun run test:e2e -- --sequential` to measure all shards without contention.
 Section, shard and suite wall times are printed; shard/suite times include cleanup.
 Screenshots are under `.wrangler/e2e/shard-N/shots` (or under `LOGIN_E2E_SHOTS/shard-N/shots`).
-Private temporary directories under `.wrangler/e2e-temp-*` are removed after each
-process exits. Interrupts are forwarded to every active shard for bounded cleanup;
+Private temporary directories under the OS temp directory (`yl-e2e-N-*`) are removed
+after each process exits. Keeping these outside the checkout prevents Windows SQLite
+path-length failures: even `persist: false` uses on-disk temporary D1 storage. Interrupts are forwarded to every active shard for
+bounded cleanup;
 a sequential run stops starting new shards after interruption.
 
 For the local D1 contention probe, use `node e2e/reproduce-d1.mjs cli traffic 8836` and compare with `node e2e/reproduce-d1.mjs binding traffic 8836`. `idle` disables traffic; the optional last argument selects a persistence directory. See [the diagnosis record](docs/d1-e2e-diagnosis.md).

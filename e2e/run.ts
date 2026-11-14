@@ -1,5 +1,6 @@
 import { SHARDS, parseShard } from './shards.ts';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
+import { createShardTempDirectory } from './temp-directory.ts';
 import { resolve } from 'node:path';
 
 if (!Bun.which('node')) throw new Error('Put Node 24 LTS on PATH before running the sign-in browser suite.');
@@ -41,7 +42,7 @@ async function runShard(shard: number): Promise<number> {
   if (interrupted) return 130;
   const start = performance.now();
   // Chromium and Miniflare inherit a private temp root: cleanup can be audited per run.
-  const temp = mkdtempSync(resolve('.wrangler', `e2e-temp-${shard}-`));
+  const temp = createShardTempDirectory(shard);
   let runner: ReturnType<typeof Bun.spawn> | undefined;
   try {
     runner = Bun.spawn(['node', '.wrangler/e2e-runner.mjs'], {
