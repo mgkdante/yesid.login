@@ -76,7 +76,12 @@ All section times below are seconds. Timed commands are included in their contai
 
 The historical pair built in 6.488 s and 4.921 s. Their CLI commands totaled 166.407 s for 50 commands and 202.652 s for 62 commands. The tracked sequential red/green probe failed with `SQLITE_BUSY` through the CLI and passed 1,000 binding writes in 39.672 s, verifying the stored count with zero HTTP failures.
 
-No sharding is needed by these measurements: the historical and current suites both completed below 600 s. Keep the ten-minute budget. If future suite growth requires sharding, separate protocol/Account/People checks from the visual/startup/email matrix, each process with its own ephemeral database and the existing budget. Do not run two processes against one persistence folder. That is a future proposal, not an implemented split.
+**Historical conclusion at e73d196 (2026-11-13):** the measured suites completed below
+600 seconds, so sharding was deferred at that point. Later suite growth and the LOG-10
+adoption brought the single process close to its limit. PR #53 implements four independent
+shards, each with its own ephemeral database and the unchanged ten-minute budget; see
+[Shard temp paths on Windows](#shard-temp-paths-on-windows-2026-11-14) for that implementation
+and its measured headroom. A persistence folder is never shared between processes.
 
 ## Cleanup verification
 
@@ -105,3 +110,112 @@ An initial 15-second stop exposed the browser-launch race: it left one Chromium 
 Main at `e73d196bda15c94fcd74f5d0076fd7a8c648751f` was merged with merge commit `19c894e273fee84c868a3d617c26c306ff69a5bf`. A direct source comparison confirms every scenario/assertion function from main is retained, all 21 scenario calls run in their original order, and `e2e/account-navigation.ts` is unchanged. Every fixture call, including Account navigation and code-entry checks, uses the serving Worker's D1 binding. A grep for D1 CLI execution in `e2e/` finds none outside the tracked reproduction script.
 
 Rejected startup and browser-launch promises now contribute no second failure during cleanup, preserving the original error. Actual resource-close failures still propagate. Two regression tests reproduced the previous masking behavior and pass with the rejection handler. The launcher also reports a clear Node 24 PATH message when `node` is absent.
+
+## Shard temp paths on Windows (2026-11-14)
+
+PR #53's original launcher (`071d0b2`) assigned each child `TMP`, `TEMP` and `TMPDIR` to a unique `.wrangler/e2e-temp-N-*` directory **inside the checkout**. This made ephemeral D1 depend on checkout depth. `persist: false` disables reuse, not disk storage: the installed Miniflare creates a `miniflare-<32 hex>/d1/miniflare-D1DatabaseObject/` directory under `os.tmpdir()` and workerd opens SQLite files there.
+
+The underlying failure is established, not inferred from the opaque reference. A diagnostic-only tap on raw workerd stdout/stderr captured this structured native error before Wrangler's log handler omitted it:
+
+```text
+workerd/jsg/util.c++:415
+ e = workerd/util/sqlite.c++:661: failed: unable to open database file: SQLITE_CANTOPEN
+ wdErrId = 2oh97k4kptb3rnpi2sdibobu
+```
+
+The D1 binding returned `internal error; reference = 2oh97k4kptb3rnpi2sdibobu` with `cause: undefined`. `WRANGLER_LOG=debug` and verbose logging alone still showed only the opaque exception. The raw tap was removed; the restored Miniflare file's SHA-256 equals the original installed file. No dependency instrumentation is part of the fix.
+
+### Paths
+
+Lengths are the original measured Windows path characters, without quotes or a terminating NUL. Public path examples replace the measured five-character username with `<user>`; this changes the displayed length by one character. Random directory and object names have fixed lengths.
+
+| Checkout | Root length | Original child temp root length | Observed D1 path | Longest observed runtime file |
+| --- | ---: | ---: | ---: | ---: |
+| Normal passing checkout | 69 | 97 | 242 base / 246 with `-shm` | 253 |
+| Nested failing checkout | 88 | 116 | 261 attempted base / 265 with `-wal` or `-shm` | 222 actually created before failure |
+| Short checkout | 7 | 35 | 180 base / 184 with `-shm` | 195 |
+| Fixed OS temp root, from the nested checkout | 88 | 49 | 194 base / 198 with `-shm` | 209 |
+
+Normal root: `C:\Users\<user>\.t3\worktrees\yesid.login\t3-a9275d58-6ed236104b90d1c0`.
+
+Nested root: `C:\Users\<user>\.t3\worktrees\yesid.login\t3-a9275d58-6ed236104b90d1c0\.wrangler\adoption`.
+
+Short root: `C:\yl46`.
+
+The following D1 filename is reconstructed from the observed failed namespace and the same binding's deterministic object filename in the passing control:
+
+```text
+C:\Users\<user>\.t3\worktrees\yesid.login\t3-a9275d58-6ed236104b90d1c0\.wrangler\adoption\.wrangler\e2e-temp-1-NkpxR8\miniflare-e58964e67fd499e6a2ba5e6b93dc4fba\d1\miniflare-D1DatabaseObject\35c7a3e86ca6d39d5d6c407007bf03af0952ae09f3a9ab0546c67a0091ad88b4.sqlite
+```
+
+That 261-character file was never created; the namespace's shorter metadata files existed. The longest project-local Wrangler bundle file observed during the fixed nested run was 147 characters, ending in `.wrangler\tmp\bundle-4rpGkl\middleware-insertion-facade.js`. Moving only runtime temp storage fixes the SQLite failure; moving the checkout or changing Wrangler's bundle directory is unnecessary.
+
+### Controlled initialization experiments
+
+The minimized probe starts the actual `e2e/local-worker.ts` Worker with the same fake bindings, applies every migration through that Worker's D1 binding, inventories temp paths before disposal, and exits nonzero on failure. It starts no browser and has no retry or fallback. One process tests initialization without parallelism; four processes each use their own ephemeral Worker and distinct ports. Diagnostic HTTP ports were 8844–8847.
+
+| Dependencies / app | Checkout | Processes | Original temp allocation | Fixed temp allocation |
+| --- | --- | ---: | --- | --- |
+| main + #53, v0.41.0 | normal | 1 | pass | — |
+| main + #53, v0.41.0 | nested | 1 | `SQLITE_CANTOPEN` | — |
+| main + #53, v0.41.0 | nested | 4 | all four fail initialization | — |
+| Same main app/harness, only the five design dependencies changed to rc.3 | nested | 1 | same initialization failure | — |
+| #46 + #53, rc.3 | short | 1 | pass | — |
+| #46 + #53, rc.3 | short | 4 | all four pass | — |
+| #46 + #53, rc.3 | nested | 4 | original suite: all four fail before scenarios | all four pass migrations |
+
+Both package sets use Wrangler **4.158.0**, Miniflare **5.20261104.0-beta**, workerd **1.20261104.1**, Node **24.11.0** and Bun **1.4.4**. Only `@yesid/analytics`, `@yesid/motion`, `@yesid/seo-kit`, `@yesid/tokens` and `@yesid/ui` differ between the v0.41.0 and v0.42.0-rc.3 dependency sets. The reduced probe uses the same local Worker and migration code; the merged suite retains #46's LOG-10 assertions and motion observers.
+
+### Fix
+
+`createShardTempDirectory` allocates a unique `yl-e2e-N-*` child under the OS temp directory, outside the checkout. The launcher passes it to each Node child through all three temp environment variables and removes it in the existing `finally` after that child exits. A random suffix separates concurrent invocations of the same shard. There is no fixed shared database directory, scenario/fixture retry, longer limit, persistent state, or suppressed initialization error.
+
+The long-checkout allocation test checks only the contract: the directory sits directly under `os.tmpdir()`, has the short `yl-e2e-N-` prefix plus six random characters, and differs between concurrent invocations. It does not reproduce `SQLITE_CANTOPEN` or open SQLite. The actual workerd binding probes above supply the native red/green failure evidence.
+
+### Full-suite verification after the fix
+
+All durations below include cleanup. Main's fixed suite passes 1,622 checks. The merged adoption suites pass 2,373 checks; all 2,364 check occurrences from the original #46 unsharded run remain, with only nine extra per-browser aggregate checks (script errors, positive motion sampling and no infinite animation). Counter comparisons normalize only the local port and motion-sample count in check names. Scenario/helper bodies are unchanged.
+
+| Full suite | Shard 1 | Shard 2 | Shard 3 | Shard 4 | Wall seconds | Checks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Main + fix | 151.496 | 117.576 | 105.418 | 198.734 | 198.797 | 1,622 |
+| #46 + fix, original 88-character nested checkout | 156.374 | 112.151 | 123.119 | 298.404 | 298.487 | 2,373 |
+| #46 + fix, `C:\yl46` | 154.289 | 98.961 | 110.628 | 285.900 | 285.959 | 2,373 |
+| #46 + fix, normal sibling worktree (63-character root) | 155.444 | 104.835 | 111.123 | 281.456 | 281.501 | 2,373 |
+
+The original unsharded #46 runner also passes from `C:\yl46`, using the old project-relative child temp layout, at 593.556 seconds before cleanup / 597.375 seconds including cleanup (port 8848). This single-process control overlaps the full nested run; the main-based and short adoption runs also overlap. The final normal-worktree headroom run starts after those controls finish. Do not read those overlapping totals as an isolated benchmark of checkout depth.
+
+The normal sibling path is `C:\Users\<user>\.t3\worktrees\yesid.login\t3-a9275d58-e2e46proof`. Its staged tree hash, `76a9c64fb0d6be3a76e804a2d7b594f6b46ee596`, exactly matches the explicit local merge tree of #46 (`c964d61b`) and #53 (`071d0b2`) plus the temp-root fix. These validation checkouts are detached; #46's branch is unchanged.
+
+Every full adoption run ends with 0 workerd, 0 Chromium, 0 newly allocated runtime temp folders and 0 Wrangler temp folders. The fixed-temp SIGTERM fan-out returns 143 with 0 remaining processes/folders after tracking 45 process IDs and creation times. A broad ancestry sampler can include unrelated processes when a historical parent PID is reused; resource counts here refer to workerd/Chromium, not unrelated desktop helpers. No unrelated desktop process is terminated.
+
+`bun run check`: zero errors/warnings. `bun test tests`: 315 pass, 0 fail, 2,029 expectations across 28 files. Copy-editor and the Node 24 build pass. No scenario/assertion, fixture/startup/run limit, migration or production source changes.
+
+### Launcher review follow-up
+
+The launcher now removes each allocated temp root with `rmSync`'s bounded filesystem
+retry policy (`maxRetries: 5`, `retryDelay: 200`). A persistent failure reports its path
+and the child's status, makes a successful child fail validation, and preserves a
+nonzero child status. The timing line still runs. These retries release transient
+Windows filesystem handles; they never rerun a scenario, fixture or migration.
+
+After signal forwarding or IPC disconnection, the parent allows the five-second child
+cleanup deadline plus two seconds, then sends SIGKILL and ends its own wait even if the
+child's exit promise remains unresolved. Cooperative exits keep their own status and
+cancel escalation. Tests cover normal IPC closure, stuck/lost IPC, failed signal delivery,
+failed termination, repeated signals, and a real subprocess that closes IPC and hangs.
+
+`SCENARIO_NAMES` is shared with unit tests; the browser registry must satisfy its exact
+key set through TypeScript. Assignment is checked at module startup, before creating a
+Worker, browser or migrations. The temp-directory unit test checks only placement,
+short fixed-length naming and isolation; native SQLite failure evidence is supplied by
+the earlier workerd experiments.
+
+Review validation: check has zero errors/warnings; 330 unit tests pass with 2,077
+expectations; copy-editor and build pass. The full four-shard suite passes all 1,622
+check occurrences unchanged, in 158.346 / 113.206 / 102.623 / 184.928 seconds, with a
+184.967-second wall time including cleanup. After tracking 91 process IDs and creation
+times: 0 remaining processes, 0 workerd, 0 Chromium, 0 runtime temp folders and 0
+Wrangler temp folders. The four-child SIGTERM control also returns 143 with no remaining
+processes or folders. The run and fixture limits and all scenario/helper bodies remain
+unchanged.

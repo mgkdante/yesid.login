@@ -1,3 +1,4 @@
+import { SCENARIO_NAMES, SHARDS, assertShardAssignment, parseShard, type ScenarioName } from './shards.ts';
 import { sitesHandoff, editorLoading } from './sites-handoff.ts';
 import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
@@ -14,10 +15,13 @@ import { chromium, type Page } from 'playwright-core';
 import { startLocalWorker } from './local-worker.ts';
 import { cleanup, cleanupStarted } from './lifecycle.ts';
 
+assertShardAssignment(SCENARIO_NAMES, SHARDS);
+
 process.env.WRANGLER_SEND_METRICS = 'false';
 const PORT = Number(process.env.LOGIN_E2E_PORT || 8799);
 const ORIGIN = `http://localhost:${PORT}`;
-const STATE = '.wrangler/e2e';
+const shard = parseShard(process.env.LOGIN_E2E_SHARD || '1/4', SHARDS.length);
+const STATE = `.wrangler/e2e/shard-${shard}`;
 const SHOTS = process.env.LOGIN_E2E_SHOTS || resolve(STATE, 'shots');
 const OWNER = 'e2e-owner@example.test';
 const CODE = '482915';
@@ -1003,31 +1007,37 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
-  await timed('sitesHandoff', () => sitesHandoff(launched, ORIGIN, check));
-  await timed('editorLoading', () => editorLoading(launched, ORIGIN, check));
-  await timed('forgivingCodeEntry', () => forgivingCodeEntry(launched));
-  await timed('pendingStorageRecovery', () => pendingStorageRecovery(launched));
-  await timed('accountCorrectness', () => accountCorrectness(launched));
-  await timed('accountStorageBlocked', () => accountStorageBlocked(launched));
-  await timed('startupRecovery', () => startupRecovery(launched));
-  await timed('startupEffectAndIsolation', () => startupEffectAndIsolation(launched));
-  await timed('legalInitialFragment', () => legalInitialFragment(page));
-  await timed('legalWithoutJavaScript', () => legalWithoutJavaScript(launched));
-  await timed('legalLanguageHash', () => legalLanguageHash(page));
-  await timed('analyticsCounting', () => analyticsCounting(launched));
-  await timed('themeAtSendTime', () => themeAtSendTime(page));
-  await timed('legalNavigation', () => legalNavigation(page));
-  await timed('accountNavigation', () => accountNavigation(launched, sql, requestCode, CODE, ORIGIN, SHOTS, check));
-  await timed('signsInWithARealCode', () => signsInWithARealCode(page));
-  await timed('refusesAWrongCode', () => refusesAWrongCode(page));
-  await timed('keepsItsPlaceWhenLanguageChanges', () => keepsItsPlaceWhenLanguageChanges(page));
-  await timed('navbarIsWhole', () => navbarIsWhole(page));
-  await timed('invitationFlow', () => invitationFlow(page));
-  await timed('peopleCorrectness', () => peopleCorrectness(page));
-  await timed('expiresInBrowser', () => expiresInBrowser(page));
-  await timed('accountFlow', () => accountFlow(page));
-  await timed('visualMatrix', () => visualMatrix(page));
-  await timed('emailSamples', () => emailSamples(launched));
+  const scenarios = {
+    sitesHandoff: () => sitesHandoff(launched, ORIGIN, check),
+    editorLoading: () => editorLoading(launched, ORIGIN, check),
+    forgivingCodeEntry: () => forgivingCodeEntry(launched),
+    pendingStorageRecovery: () => pendingStorageRecovery(launched),
+    accountCorrectness: () => accountCorrectness(launched),
+    accountStorageBlocked: () => accountStorageBlocked(launched),
+    startupRecovery: () => startupRecovery(launched),
+    startupEffectAndIsolation: () => startupEffectAndIsolation(launched),
+    legalInitialFragment: () => legalInitialFragment(page),
+    legalWithoutJavaScript: () => legalWithoutJavaScript(launched),
+    legalLanguageHash: () => legalLanguageHash(page),
+    analyticsCounting: () => analyticsCounting(launched),
+    themeAtSendTime: () => themeAtSendTime(page),
+    legalNavigation: () => legalNavigation(page),
+    accountNavigation: () => accountNavigation(launched, sql, requestCode, CODE, ORIGIN, SHOTS, check),
+    signsInWithARealCode: () => signsInWithARealCode(page),
+    refusesAWrongCode: () => refusesAWrongCode(page),
+    keepsItsPlaceWhenLanguageChanges: () => keepsItsPlaceWhenLanguageChanges(page),
+    navbarIsWhole: () => navbarIsWhole(page),
+    invitationFlow: () => invitationFlow(page),
+    peopleCorrectness: () => peopleCorrectness(page),
+    expiresInBrowser: () => expiresInBrowser(page),
+    accountFlow: () => accountFlow(page),
+    visualMatrix: () => visualMatrix(page),
+    emailSamples: () => emailSamples(launched),
+  } satisfies Record<ScenarioName, () => Promise<void>>;
+  assertShardAssignment(Object.keys(scenarios), SHARDS);
+  for (const name of SHARDS[shard - 1]) {
+    await timed(name, scenarios[name]);
+  }
   writeFileSync(resolve(SHOTS,'index.md'), '# Local polish and legal checks\n\n'+captures.map(file=>`- [${file}](${file})`).join('\n'));
   check('no script errors or security policy violations on the sign-in pages', problems.length === 0, problems.slice(0, 3).join(' | ').slice(0, 400));
   console.info(`All passed. Screenshots: ${SHOTS}`);
