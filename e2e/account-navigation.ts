@@ -35,8 +35,11 @@ INSERT INTO membership(site_slug,user_id,role) VALUES ('example','account-${role
           check(`${role}/${lang}: editor opens Account (A-1)`, account.url() === `${origin}/account?site=example&lang=${lang}` && await account.locator('html').getAttribute('lang') === lang);
         } finally { await account.close(); }
       }
-    } finally { await context.close(); }
-    await sql(`DELETE FROM membership WHERE user_id='account-${role}'; DELETE FROM user WHERE id='account-${role}';`);
+    } finally {
+      await context.close();
+      // Always remove the synthetic fixture, so a failed check cannot block the next run.
+      await sql(`DELETE FROM membership WHERE user_id='account-${role}'; DELETE FROM user WHERE id='account-${role}';`);
+    }
   }
   const context = await browser.newContext();
   try {
