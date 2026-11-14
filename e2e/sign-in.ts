@@ -169,7 +169,7 @@ async function keepsItsPlaceWhenLanguageChanges(page: Page) {
 async function checkStartupState(page: Page, mode: string, path: string, lang: 'fr' | 'en' | 'es', text: readonly string[]) {
   const missing = path === '/missing/';
   if (mode === 'boot-blocked') {
-    check(`LOG-9 boot blocked ${path} ${lang}: visible sentence`, await page.getByRole('status').isVisible() && (await page.getByRole('status').innerText()).length > 10);
+    check(`LOG-9 boot and app blocked ${path} ${lang}: loading sentence stays visible (no failure report without boot.js)`, await page.getByRole('status').isVisible() && (await page.getByRole('status').innerText()).length > 10);
   } else if (mode === 'nojs') {
     check(`LOG-9 nojs ${path} ${lang}: instruction`, missing ? (await page.locator('noscript').innerText()).length > 10 : await page.locator('noscript').innerText() === text[1]);
     check(`LOG-9 nojs ${path} ${lang}: no loading loop`, !await page.getByRole('status').isVisible());
