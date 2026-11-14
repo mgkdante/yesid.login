@@ -107,7 +107,7 @@ The build refuses Node versions other than 24 LTS. Bun runs installation and tes
 The browser suite uses four local ports starting at localhost:8799; set `LOGIN_E2E_PORT`
 to the first of four free consecutive ports when another development session is using them.
 
-The exact v0.40.0 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
+The exact v0.42.0 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
 `@yesid/seo-kit`, Svelte 5.57.2 and Satori 0.33.5. CSS order is tokens, Tailwind,
 UI base; the copied self-hosted font stylesheet loads separately. No SvelteKit router is needed.
 
