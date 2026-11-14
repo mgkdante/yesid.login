@@ -21,16 +21,17 @@ Separately, extending the persistence path produces `workerd/util/sqlite.c++:661
 | Shared global state between independent folders | Two simultaneous CLI/idle probes in separate source folders, using the same Worker name and database ID, pass 30 writes each (98.439 s and 100.604 s). Ports 8836 and 8838 are distinct; inspectors are disabled. This does not rule out all global-state defects, but independent folders alone did not reproduce this one. |
 | External defect | SQLite errors are captured below the generic CLI message. Cloudflare also tracks local D1 concurrency failures ([workers-sdk #14916](https://github.com/cloudflare/workers-sdk/issues/14916)); this investigation does not bisect versions or claim that issue is the exact same regression. |
 
-Initial minimal-loop commands (throwaway script under `.wrangler/diagnosis/repro.ts`):
+Reproduce using the tracked probe:
 
 ```powershell
-bun .wrangler/diagnosis/repro.ts .wrangler/diagnosis/state 8830 idle
-bun .wrangler/diagnosis/repro.ts .wrangler/diagnosis/traffic-state 8830 traffic
-# Extended-path initialization, Worker stopped:
-bun .wrangler/diagnosis/repro.ts ('.wrangler/diagnosis/'+('long-path-'*13)+'/state') 8830 stopped
+node e2e/reproduce-d1.mjs cli idle 8836
+node e2e/reproduce-d1.mjs cli traffic 8836
+node e2e/reproduce-d1.mjs binding traffic 8836
+# Extended-path initialization fails before the probe starts its Worker:
+node e2e/reproduce-d1.mjs cli idle 8836 ('.wrangler/diagnosis/'+('long-path-'*13)+'/state')
 ```
 
-The tracked probe retains the contention experiment without application fixtures. CLI stderr uses `WRANGLER_LOG=debug`; the original probe also captured both Worker stdout and stderr. The underlying errors are `SQLITE_BUSY` and, separately, `SQLITE_CANTOPEN`, rather than an unexplained internal-error reference.
+CLI stderr uses `WRANGLER_LOG=debug`. The underlying errors captured were `SQLITE_BUSY` and, separately, `SQLITE_CANTOPEN`.
 
 ## Harness change
 
@@ -38,65 +39,61 @@ Bun bundles application imports, including token JSON, then starts the runner un
 
 Every run gets fresh ephemeral storage. The real additive migrations run in sorted order through the binding before browser traffic. Fixtures use Wrangler's SQL splitter and D1 batch, preserving multiline SQL and formatted SELECT output used by existing assertions. Explicit `e2e/empty.env` and fake binding overrides prevent loading developer `.dev.vars`. Nothing adds a route or flag to the production Worker. No package versions change.
 
-`COMMAND_LIMIT_MS = 60_000` and `RUN_LIMIT_MS = 10 * 60_000` remain unchanged. Migration and fixture commands retain the minute limit. Startup, migrations, browser failures and normal completion all enter cleanup. All existing browser sections and assertions run; S-*, H-* and A-* behavior is unchanged. This is harness infrastructure outside the Gate A product rows, supporting their acceptance checks rather than changing those rows.
+`COMMAND_LIMIT_MS = 60_000` and `RUN_LIMIT_MS = 10 * 60_000` remain unchanged. Migration and fixture commands retain the minute limit. Startup, migrations, browser failures, interruption and normal completion all enter bounded cleanup. Every browser section and assertion is preserved; sign-in, editor handoff and email-change behavior is unchanged.
 
 ## Timings and validation
 
-All times are contended measurements. Other threads were left running at the owner's instruction; no process belonging to another thread was stopped. Historical source snapshots use the installed cbf25c2 lockfile dependencies, so these compare source/suite changes rather than dependency-version differences.
-
-An initial cbf25c2 run passed in 373.640 s (62 subprocess commands, 147.100 s total); the first modified full run passed in 236.645 s (61 fixture batches, 3.553 s total). The initial fixed timing counted fixture batches but excluded its migration batch; the final instrumentation includes migrations as a fixture command. The visual matrix remains the largest browser section. Builds are separate from `test:e2e`; they do not consume its ten-minute budget.
+The historical source comparison ran f1f5504 and cbf25c2 back to back with identical dependency versions. The final implementation runs are consecutive full-suite passes. Builds run separately and are excluded from the suite budget. Measurements were under load and are not a hardware performance guarantee.
 
 All section times below are seconds. Timed commands are included in their containing sections. The final passes are the consecutive runs of the final code, after the historical pair.
 
 | Section | f1f5504 | cbf25c2 | Final pass 1 | Final pass 2 |
 | --- | ---: | ---: | ---: | ---: |
-| prepare | 14.514 | 17.181 | 6.252 | 5.019 |
-| analyticsCounting | 4.518 | 4.606 | 4.182 | 4.160 |
-| themeAtSendTime | 1.711 | 1.094 | 1.265 | 1.147 |
-| legalNavigation | 3.197 | 6.801 | 3.217 | 3.424 |
-| signsInWithARealCode | 24.457 | 18.978 | 8.574 | 8.584 |
-| refusesAWrongCode | 7.490 | 9.964 | 3.154 | 3.446 |
-| keepsItsPlaceWhenLanguageChanges | 5.962 | 7.491 | 3.229 | 1.737 |
-| navbarIsWhole | 4.391 | 4.616 | 4.824 | 4.325 |
-| invitationFlow | 22.940 | 23.517 | 7.976 | 7.296 |
-| expiresInBrowser | 12.421 | 10.373 | 5.522 | 3.486 |
-| accountFlow | 21.577 | 11.773 | 4.756 | 3.532 |
-| visualMatrix | 218.299 | 252.226 | 109.934 | 107.212 |
-| emailSamples | 8.753 | 22.260 | 10.614 | 8.361 |
+| prepare | 14.514 | 17.181 | 12.403 | 6.667 |
+| analyticsCounting | 4.518 | 4.606 | 4.322 | 4.423 |
+| themeAtSendTime | 1.711 | 1.094 | 1.266 | 1.575 |
+| legalNavigation | 3.197 | 6.801 | 2.760 | 2.780 |
+| signsInWithARealCode | 24.457 | 18.978 | 8.715 | 9.613 |
+| refusesAWrongCode | 7.490 | 9.964 | 3.000 | 3.803 |
+| keepsItsPlaceWhenLanguageChanges | 5.962 | 7.491 | 1.803 | 1.854 |
+| navbarIsWhole | 4.391 | 4.616 | 4.583 | 5.057 |
+| invitationFlow | 22.940 | 23.517 | 7.839 | 11.195 |
+| expiresInBrowser | 12.421 | 10.373 | 3.726 | 6.072 |
+| accountFlow | 21.577 | 11.773 | 4.005 | 5.658 |
+| visualMatrix | 218.299 | 252.226 | 138.216 | 144.006 |
+| emailSamples | 8.753 | 22.260 | 15.235 | 16.763 |
 | startWorker | n/a | 5.303 | n/a | n/a |
-| startupRecovery | n/a | 24.542 | 19.692 | 18.319 |
-| startupEffectAndIsolation | n/a | 2.228 | 1.150 | 1.180 |
-| legalInitialFragment | n/a | 1.864 | 1.617 | 1.882 |
-| legalWithoutJavaScript | n/a | 4.060 | 3.823 | 3.289 |
-| legalLanguageHash | n/a | 3.717 | 3.879 | 3.865 |
-| accountNavigation | n/a | 66.209 | 27.373 | 24.771 |
-| peopleCorrectness | n/a | 12.434 | 17.000 | 14.643 |
-| total | 358.458 | 511.958 | 248.775 | 230.107 |
+| startupRecovery | n/a | 24.542 | 17.522 | 21.218 |
+| startupEffectAndIsolation | n/a | 2.228 | 2.358 | 1.604 |
+| legalInitialFragment | n/a | 1.864 | 1.322 | 2.039 |
+| legalWithoutJavaScript | n/a | 4.060 | 3.139 | 4.030 |
+| legalLanguageHash | n/a | 3.717 | 3.551 | 5.577 |
+| accountNavigation | n/a | 66.209 | 27.926 | 28.116 |
+| peopleCorrectness | n/a | 12.434 | 15.830 | 39.551 |
+| total | 358.458 | 511.958 | 280.403 | 322.600 |
 
-The back-to-back pair built in 6.488 s (f1f5504) and 4.921 s (cbf25c2). Fixture/CLI totals were 166.407 s for 50 commands and 202.652 s for 62 commands respectively. The latter started at 2 workerd / 1 Wrangler and ended at 4 / 3; f1f5504 started and ended at 2 / 1. Counts are machine-wide boundary snapshots, not proof of constant CPU load. A short D1 probe and unit checks overlapped part of the historical run; the current run was left free of our other probes. No claim of an idle-machine speedup is made.
-
-The final tracked-probe invocation `node e2e/reproduce-d1.mjs cli traffic 8836` exited 1 with `SQLITE_BUSY`; `node e2e/reproduce-d1.mjs binding traffic 8836` then passed 1,000 writes in 39.672 s with the persisted write-count assertion and zero HTTP failures. This is a sequential red/green comparison of database ownership, with no retry. Earlier binding probes completed in 27.253 s and 31.038 s.
+The historical pair built in 6.488 s and 4.921 s. Their CLI commands totaled 166.407 s for 50 commands and 202.652 s for 62 commands. The tracked sequential red/green probe failed with `SQLITE_BUSY` through the CLI and passed 1,000 binding writes in 39.672 s, verifying the stored count with zero HTTP failures.
 
 No sharding is needed by these measurements: the historical and current suites both completed below 600 s. Keep the ten-minute budget. If future suite growth requires sharding, separate protocol/Account/People checks from the visual/startup/email matrix, each process with its own ephemeral database and the existing budget. Do not run two processes against one persistence folder. That is a future proposal, not an implemented split.
 
-Validation before the final consecutive pair: `bun install --frozen-lockfile` passed; `bun run check` reported zero errors and warnings; `bun test tests` passed 238 tests / 1,813 assertions across 22 files; `bun run copy-editor` and `bun run build:login` passed (Vite 6.99 s). No screenshots are needed for this harness-only change; the full suite still produces its complete screenshot matrix. An additional full pass completed in 283.386 s with 62 fixture commands totaling 2.708 s; the subsequent final pair includes the restored startup readiness cap.
+## Cleanup verification
 
-A direct source comparison of the complete `function check` through the last browser scenario confirms that all scenario and assertion function bodies are unchanged from cbf25c2. The final implementation also retains the original one-minute startup readiness cap.
+Review follow-up: cleanup attempts the browser and Worker concurrently, including pending launches, under a five-second bound. The watchdog and forwarded interruption use the same cleanup. Startup creation and its first fetch share the original one-minute deadline; failure disposal is bounded too. On Windows, the launcher relays signals over IPC so Node can clean up before exiting. Other platforms receive the native signal.
+
+Cleanup measurements use each launch's descendants and a fresh dedicated temp directory. Counts exclude pre-existing processes and folders. W = workerd processes, C = Chromium processes including renderers, T = runtime-created temp directories inside a fresh empty measurement container. Descendant PIDs and creation times identify each launch's processes; these are not machine-wide counts.
+
+| Control | Exit | Before W / C / T | Observed peak W / C / T | After W / C / T |
+| --- | ---: | --- | --- | --- |
+| Full passing run 1 | 0 | 0 / 0 / 0 | 2 / 6 / 4 | 0 / 0 / 0 |
+| Full passing run 2 | 0 | 0 / 0 / 0 | 2 / 7 / 4 | 0 / 0 / 0 |
+| Forced watchdog (40 s) | 1 | 0 / 0 / 0 | 2 / 8 / 4 | 0 / 0 / 0 |
+| SIGINT relay | 130 | 0 / 0 / 0 | 2 / 6 / 4 | 0 / 0 / 0 |
+| SIGTERM relay | 143 | 0 / 0 / 0 | 2 / 5 / 4 | 0 / 0 / 0 |
+
+The watchdog test temporarily lowered the local run limit to 40 seconds. Signal tests temporarily dispatched SIGINT or SIGTERM through the Bun launcher's handlers. All temporary triggers were removed before the consecutive passing pair; the committed run limit is ten minutes. Physical console Ctrl+C and POSIX signal delivery were not exercised.
+
+An initial 15-second stop exposed the browser-launch race: it left one Chromium process and one profile directory at the immediate post-exit snapshot. The pending-launch cleanup fixes that race. That process subsequently exited; removal of the initial control's profile directory was blocked by automatic approval review, so the local artifact remains. The final control directories above contain no residual runtime folders. Raw logs stayed local.
 
 ## Final validation
 
-The final consecutive browser runs passed all 1,268 checks each: 248.775 s and 230.107 s. Their 62 migration/fixture commands totaled 6.014 s and 2.078 s respectively. Both runs started and ended at 2 workerd / 1 Wrangler. The preceding full pass was 283.386 s; the initial full pass was 236.645 s. All used the same ten-minute budget. Final `check` has zero errors and warnings; unit tests pass 238/238 (1,813 expect calls); copy-editor and the Node 24 build pass.
-
-The two historical commits have the identical bun.lock blob, `97b8d1a37a00dc56dff5d80376306d10cae6318e`, so their dependency versions are equal. These are contended source comparisons, not a hardware performance guarantee. We did not obtain an idle-machine benchmark or decode the originally supplied internal-error references.
-
-Machine-wide load samples (workerd / Wrangler process counts at run boundaries):
-
-| Run | Start | End |
-| --- | ---: | ---: |
-| f1f5504 | 2 / 1 | 2 / 1 |
-| cbf25c2 | 2 / 1 | 4 / 3 |
-| Additional fixed pass | 2 / 1 | 2 / 1 |
-| Final pass 1 | 2 / 1 | 2 / 1 |
-| Final pass 2 | 2 / 1 | 2 / 1 |
-
-Local raw evidence is under `.wrangler/diagnosis/`: `before-f1f5504-measured.log`, `cbf25c2-measured.log`, `fixed-final-2.log`, `fixed-final-3.log`, `load.jsonl`, `cli-traffic-final.log`, `binding-traffic-final.log`, `parallel-a.log`, `parallel-b.log`, `long-path-failure.log`, and `final-{check,unit,build}.log`. Logs stay local; the commands, outcomes and per-section measurements needed for review are recorded here.
+`bun run check` passes with zero errors and warnings. `bun test tests` passes 243 tests across 23 files, with 1,820 expect calls, including five lifecycle regression tests. Copy-editor and the Node 24 build pass (Vite 4.30 s). The consecutive full E2E passes run 1,268 checks each in 280.403 s and 322.600 s; their 62 fixture commands total 3.794 s and 3.980 s. A separate Node 26 invocation fails early with the requested Node 24 message. Package and lockfile contents, browser scenario/assertion functions, and both existing limits remain unchanged.

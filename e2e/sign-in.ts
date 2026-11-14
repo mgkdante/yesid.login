@@ -11,6 +11,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
 import { startLocalWorker } from './local-worker.ts';
+import { cleanup } from './lifecycle.ts';
 
 process.env.WRANGLER_SEND_METRICS = 'false';
 const PORT = Number(process.env.LOGIN_E2E_PORT || 8799);
@@ -32,6 +33,7 @@ async function timed<T>(name: string, work: () => Promise<T>): Promise<T> {
   try { return await work(); } finally { console.info(`timing - ${name}: ${Math.round(performance.now() - start)} ms`); }
 }
 let worker: Awaited<ReturnType<typeof startLocalWorker>> | undefined;
+let workerStart: ReturnType<typeof startLocalWorker> | undefined;
 async function fixtureCommand<T>(work: () => Promise<T>): Promise<T> {
   const start = performance.now();
   commandCount += 1;
@@ -58,7 +60,7 @@ async function setPendingCode(email: string, code = CODE, type = 'sign-in') {
 async function prepare() {
   rmSync(STATE, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
-  worker = await startLocalWorker(PORT, COMMAND_LIMIT_MS);
+  worker = await (workerStart = startLocalWorker(PORT, COMMAND_LIMIT_MS));
   const local = worker;
   await fixtureCommand(() => local.migrate());
   const now = new Date().toISOString();
@@ -660,14 +662,36 @@ async function analyticsCounting(browser: Awaited<ReturnType<typeof chromium.lau
   await context.close();
 }
 
-const watchdog = setTimeout(() => {
-  console.error(`E2E stopped after ${RUN_LIMIT_MS / 60_000} minutes. Last check passed: ${lastPassed}`);
-  process.exit(1);
-}, RUN_LIMIT_MS);
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+let browserLaunch: ReturnType<typeof chromium.launch> | undefined;
+let closing: Promise<void> | undefined;
+const closeResources = () => closing ??= cleanup([
+  () => browser ? browser.close() : browserLaunch?.then(launched => launched.close()),
+  () => worker ? worker.dispose() : workerStart?.then(started => started.dispose())
+]);
+async function stopRun(reason: string, exitCode: number) {
+  clearTimeout(watchdog);
+  console.error(reason);
+  try { await closeResources(); }
+  catch (error) { console.error(error); }
+  finally { process.exit(exitCode); }
+}
+const watchdog = setTimeout(() => {
+  void stopRun(`E2E stopped after ${RUN_LIMIT_MS / 60_000} minutes. Last check passed: ${lastPassed}`, 1);
+}, RUN_LIMIT_MS);
+const interrupt = () => { void stopRun('E2E interrupted by SIGINT', 130); };
+const terminate = () => { void stopRun('E2E interrupted by SIGTERM', 143); };
+process.once('SIGINT', interrupt);
+process.once('SIGTERM', terminate);
+const forwardedSignal = (message: unknown) => {
+  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'e2e-signal' || !('signal' in message)) return;
+  if (message.signal === 'SIGINT') interrupt();
+  if (message.signal === 'SIGTERM') terminate();
+};
+process.on('message', forwardedSignal);
 try {
   await timed('prepare', prepare);
-  const launched = await chromium.launch();
+  const launched = await (browserLaunch = chromium.launch());
   browser = launched;
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' })).newPage();
   const problems: string[] = [];
@@ -698,7 +722,12 @@ try {
   console.info(`All passed. Screenshots: ${SHOTS}`);
 } finally {
   console.info(`timing - total: ${Math.round(performance.now() - started)} ms; commands: ${commandCount}, ${Math.round(commandMs)} ms`);
-  await browser?.close();
-  await worker?.dispose();
-  clearTimeout(watchdog);
+  try { await closeResources(); }
+  finally {
+    clearTimeout(watchdog);
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', terminate);
+    process.off('message', forwardedSignal);
+    if (process.connected) process.disconnect?.();
+  }
 }

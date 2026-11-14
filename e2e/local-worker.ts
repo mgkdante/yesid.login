@@ -1,9 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { unstable_startWorker, unstable_splitSqlQuery } from 'wrangler';
+import { cleanup, startResource } from './lifecycle.ts';
 
 /** One workerd owns both HTTP requests and fixture SQL. No second SQLite connection. */
 export async function startLocalWorker(port: number, startupLimitMs: number) {
-  const worker = await unstable_startWorker({
+  const worker = await startResource(() => unstable_startWorker({
     config: 'wrangler.toml',
     entrypoint: 'e2e/worker.ts',
     envFiles: ['e2e/empty.env'],
@@ -17,15 +18,8 @@ export async function startLocalWorker(port: number, startupLimitMs: number) {
       watch: false, persist: false, inferOriginFromRoutes: false,
       logLevel: 'error'
     }
-  });
-  let startupLimit: ReturnType<typeof setTimeout> | undefined;
+  }), local => local.fetch(`http://localhost:${port}/`), startupLimitMs);
   try {
-    // A request waits for the runtime, whereas `ready` only waits for the proxy.
-    await Promise.race([
-      worker.fetch(`http://localhost:${port}/`),
-      new Promise<never>((_, reject) => { startupLimit = setTimeout(() => reject(new Error('Local Worker startup exceeded its command limit')), startupLimitMs); })
-    ]);
-    clearTimeout(startupLimit);
     const runtime = worker.raw.runtimes.find(runtime => runtime.mf)?.mf;
     if (!runtime) throw new Error('Wrangler did not expose its local Miniflare runtime');
     const { DB } = await runtime.getBindings<{ DB: D1Database }>(worker.config.name);
@@ -43,6 +37,8 @@ export async function startLocalWorker(port: number, startupLimitMs: number) {
       },
       dispose: () => worker.dispose()
     };
-  } catch (error) { await worker.dispose(); throw error; }
-  finally { clearTimeout(startupLimit); }
+  } catch (error) {
+    await cleanup([() => worker.dispose()]).catch(error => console.error('Startup cleanup:', error));
+    throw error;
+  }
 }
