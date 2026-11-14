@@ -114,9 +114,7 @@ class LoginController {
     }, 'checkError');
   }
   throttle(response: Response) {
-    const header = response.headers.get('X-Retry-After');
-    const seconds = Number(header);
-    this.emit({ message: 'rate', retryMinutes: header !== null && header.trim() !== '' && Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.ceil(seconds / 60)) : undefined });
+    this.emit({ message: 'rate', retryMinutes: retryMinutes(response) });
   }
 }
 
@@ -131,4 +129,11 @@ export function popupHandover(host: Window, token: string): boolean {
   });
   opener.postMessage('authorizing:github', host.location.origin);
   return true;
+}
+
+/** S-12: only a positive authoritative wait is shown, rounded up to minutes. */
+export function retryMinutes(response: Response): number | undefined {
+  const header = response.headers.get('X-Retry-After');
+  const seconds = Number(header);
+  return header !== null && header.trim() !== '' && Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.ceil(seconds / 60)) : undefined;
 }

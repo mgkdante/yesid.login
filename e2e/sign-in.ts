@@ -623,6 +623,99 @@ async function peopleOutcomeChecks(page: Page, lang: 'fr' | 'en' | 'es', width: 
   setMode('unchanged'); await submit();
   check(`LOG-4 next action clears refresh failure ${lang}/${width}`, !(await status.innerText()).includes(failure) && await status.getByRole('link').count() === 0);
 }
+// LOG-5: A-1/A-2/A-4/A-5/A-8/A-9, isolated synthetic replies; no email leaves the browser.
+async function accountCorrectness(browser: import('playwright-core').Browser) {
+  for (const lang of ['en', 'fr', 'es']) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addInitScript(() => localStorage.setItem('login.session.example', JSON.stringify({ token: 'account-test' })));
+    const page = await context.newPage();
+    let restoreStatus = 503, status = 500, waitHeader = true, calls = 0, lastOtp = '', malformed = false, lost = false;
+    await page.route('**/auth/api/get-session', route => route.fulfill({ status: restoreStatus, json: { session: {}, user: { id: 'account-user', email: 'current@example.test' } } }));
+    await page.route('**/account', route => route.request().headers().authorization
+      ? route.fulfill({ json: {} }) : route.continue());
+    await page.route('**/auth/sites', route => route.fulfill({ json: [{ slug: 'example' }] }));
+    await page.route('**/auth/api/email-otp/*', route => {
+      calls++; lastOtp = route.request().postDataJSON().otp || '';
+      if (lost) return route.abort();
+      return route.fulfill({ status, json: malformed ? {} : { success: true }, headers: status === 429 && waitHeader ? { 'X-Retry-After': '61' } : {} });
+    });
+    const submit = () => page.locator('form button[type="submit"]').click();
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`);
+    const retry = page.getByRole('button', { name: { en: 'Retry', fr: 'Réessayer', es: 'Reintentar' }[lang], exact: true });
+    await retry.waitFor();
+    check(`A-1 failed restore disables every field ${lang}`, await page.locator('#email').isDisabled() && await page.locator('form button').isDisabled());
+    restoreStatus = 200; await retry.click(); await page.locator('#email:enabled').waitFor();
+    await page.locator('#email').fill('new@example.test');
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang === 'en' ? 'fr' : 'en'}`);
+    await page.locator('#email:enabled').waitFor();
+    check(`A-8 address survives language reload ${lang}`, await page.locator('#email').inputValue() === 'new@example.test');
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await page.locator('#email:enabled').waitFor();
+    await submit(); await page.getByRole('status').filter({ hasText: /current address|adresse actuelle|dirección actual/ }).waitFor();
+    check(`A-2 failure before code names sending ${lang}`, await page.getByRole('alert').count() === 0 && await page.locator('#email').inputValue() === 'new@example.test');
+    status = 429; await submit(); await page.getByRole('status').filter({ hasText: /2 minutes|2 minutos/ }).waitFor();
+    check(`A-2 S-12 authoritative wait ${lang}`, true);
+    waitHeader = false; await submit();
+    await page.getByRole('status').filter({ hasText: /later|plus tard|más tarde/ }).waitFor();
+    status = 200; await submit(); await codeField(page).waitFor();
+    check(`A-3 both addresses named ${lang}`, (await page.locator('main').innerText()).includes('current@example.test') && (await page.locator('main').innerText()).includes('new@example.test'));
+    for (const stage of ['current', 'new']) {
+      await page.reload(); await codeField(page).waitFor();
+      check(`A-8 ${stage} restores empty code ${lang}`, await codeField(page).inputValue() === '');
+      status = 400;
+      for (const value of ['123456', ' 123456', '123 456', '000123', '123-456', '123–456', '123\t456', '123\u00a0456', '123\u200b456']) {
+        const before = calls; await codeField(page).fill(value); await submit(); await page.locator('#code-error').waitFor();
+        check(`A-4/A-5 ${stage} paste intact ${lang}`, calls === before + 1 && lastOtp === value.replace(/[ \t\u00a0\u200b\-\u2013]/g, '') && await page.getByRole('alert').count() === 1 && await codeField(page).evaluate((el: HTMLInputElement) => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length));
+      }
+      for (const value of ['12345', '1234567', 'code:123456', '１２３４５６', '123.456']) {
+        const before = calls; await codeField(page).fill(value); await submit(); await page.locator('#code-error').waitFor();
+        check(`A-4/A-5 ${stage} rejects prose/invalid format ${lang}`, calls === before && await codeField(page).getAttribute('aria-invalid') === 'true');
+      }
+      await codeField(page).fill('123456'); status = 500; await submit();
+      await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      check(`A-2 ${stage} server failure retains code ${lang}`, await codeField(page).inputValue() === '123456');
+      status = 200; malformed = true; await submit();
+      await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      malformed = false; lost = true; await submit();
+      await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      lost = false;
+      check(`A-2 ${stage} lost response retains code ${lang}`, await codeField(page).inputValue() === '123456');
+      await page.screenshot({ path: resolve(SHOTS, `log-5-${lang}-${stage}-390.png`) });
+      if (stage === 'current') { await submit(); await page.getByRole('status').filter({ hasText: /If this address|Si cette adresse|Si esta dirección/ }).waitFor(); }
+    }
+    // A-8 expired challenge keeps only the address; another person's record is discarded.
+    await page.evaluate(() => { const key = 'login.account.example'; const r = JSON.parse(sessionStorage.getItem(key)!); r.sentAt = Date.now() - 301000; r.expiresAt = r.sentAt + 300000; sessionStorage.setItem(key, JSON.stringify(r)); });
+    await page.reload(); await page.locator('#email:enabled').waitFor();
+    check(`A-8 expired restore retains address ${lang}`, await page.locator('#email').inputValue() === 'new@example.test');
+    await page.evaluate(() => { const key = 'login.account.example'; const r = JSON.parse(sessionStorage.getItem(key)!); r.userId = 'other-user'; sessionStorage.setItem(key, JSON.stringify(r)); });
+    await page.reload(); await page.locator('#email:enabled').waitFor();
+    check(`A-8 wrong user cleared ${lang}`, await page.locator('#email').inputValue() === '' && await page.evaluate(() => sessionStorage.getItem('login.account.example')) === null);
+    await page.locator('#email').fill('new@example.test'); status = 401; await submit();
+    await page.waitForURL(`${ORIGIN}/?site=example`);
+    check(`A-9 401 clears account context ${lang}`, await page.evaluate(() => sessionStorage.getItem('login.account.example')) === null);
+    await context.close();
+  }
+}
+async function accountStorageBlocked(browser: import('playwright-core').Browser) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('login.session.example', JSON.stringify({ token: 'account-test' }));
+    Object.defineProperty(window, 'sessionStorage', { get() { throw new DOMException('Blocked', 'SecurityError'); } });
+  });
+  const page = await context.newPage();
+  await page.route('**/auth/api/get-session', route => route.fulfill({ json: { session: {}, user: { id: 'account-user', email: 'current@example.test' } } }));
+  await page.route('**/account', route => route.fulfill({ json: {} }));
+  await page.route('**/auth/sites', route => route.fulfill({ json: [{ slug: 'example' }] }));
+  await page.route('**/auth/api/email-otp/*', route => route.fulfill({ json: { success: true } }));
+  await page.goto(`${ORIGIN}/account?site=example&lang=en`); await page.locator('#email:enabled').waitFor();
+  await page.locator('#email').fill('new@example.test'); await page.locator('form button').click(); await codeField(page).waitFor();
+  await codeField(page).fill('123 456'); await page.locator('form button').click();
+  await page.getByRole('status').filter({ hasText: 'If this address' }).waitFor();
+  check('A-8 blocked context storage allows both proof stages with one warning', (await page.locator('main').innerText()).split('This browser cannot keep').length === 2);
+  await codeField(page).fill('123 456'); await page.locator('form button').click();
+  await page.getByRole('status').filter({ hasText: 'All sessions are closed' }).waitFor();
+  check('A-5 blocked record removal still shows completion', await page.locator('form').count() === 0);
+  await context.close();
+}
 async function accountFlow(page: Page) {
   await page.goto(`${ORIGIN}/account?lang=en`);
   await page.waitForURL(`${ORIGIN}/`);
@@ -635,6 +728,7 @@ async function accountFlow(page: Page) {
   await setPendingCode('e2e-owner:changed@example.test', CODE, 'change-email');
   await codeField(page).fill(CODE); await page.locator('form button[type="submit"]').click();
   await page.getByText('All sessions are closed', { exact: false }).waitFor();
+  check('A-5 completion clears account and site records', await page.evaluate(() => sessionStorage.getItem('login.account.example') === null && localStorage.getItem('login.session.example') === null));
   check('email change deletes every session', (await sql('SELECT count(*) AS remaining FROM session WHERE userId=\'e2e-owner\'')).includes('"remaining": 0'));
   await requestCode(page, '?site=example&lang=en', 'changed@example.test');
   await codeField(page).fill(CODE); await page.locator('form button[type="submit"]').click();
@@ -837,6 +931,8 @@ try {
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
   await forgivingCodeEntry(browser);
   await pendingStorageRecovery(browser);
+  await accountCorrectness(browser);
+  await accountStorageBlocked(browser);
   await startupRecovery(browser);
   await startupEffectAndIsolation(browser);
   await legalInitialFragment(page);
