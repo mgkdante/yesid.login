@@ -236,8 +236,9 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   await page.locator('#sign-in').focus();
   await page.clock.fastForward(300250);
   check('S-10 deadline keeps Code, digits, disabled submit and recovery focus', await codeField(page).inputValue() === '123456' && await page.locator('#sign-in').isDisabled() && await page.getByRole('button', { name: 'Request another code', exact: true }).evaluate(el => el === document.activeElement));
-  check('S-10 expired heading clears the fixed header at 390 px', await page.evaluate(() => document.querySelector('h1')!.getBoundingClientRect().top >= document.querySelector('header')!.getBoundingClientRect().bottom));
   await page.screenshot({ path: resolve(SHOTS, 'log-2-expired-390.png') });
+  const clearance = await page.evaluate(() => ({ heading: document.querySelector('h1')!.getBoundingClientRect().top, header: document.querySelector('header')!.getBoundingClientRect().bottom, scroll: scrollY }));
+  check('S-10 expired heading clears the fixed header at 390 px', clearance.heading >= clearance.header, JSON.stringify(clearance));
   await page.reload(); await codeField(page).waitFor();
   check('S-11 reload restores expired context without digits', await codeField(page).inputValue() === '' && await page.locator('#sign-in').isDisabled());
   await page.goto(ORIGIN + '/?lang=fr'); await codeField(page).waitFor();

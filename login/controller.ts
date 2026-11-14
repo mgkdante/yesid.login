@@ -116,7 +116,7 @@ class LoginController {
   throttle(response: Response) {
     const header = response.headers.get('X-Retry-After');
     const seconds = Number(header);
-    this.emit({ message: 'rate', retryMinutes: header !== null && header.trim() !== '' && Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds / 60) : undefined });
+    this.emit({ message: 'rate', retryMinutes: header !== null && header.trim() !== '' && Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.ceil(seconds / 60)) : undefined });
   }
 }
 

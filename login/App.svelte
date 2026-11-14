@@ -67,14 +67,16 @@
       storageMessage = text.noRestore; warnedStorage = true;
     }
     if (resending) controller.emit({ message: 'resent' });
-    await tick(); codeInput?.focus();
+    await tick();
+    codeInput?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
   }
   async function verify() {
     if (view.busy) return;
     if (expiresAt && Date.now() >= expiresAt) {
       const moveFocus = document.activeElement?.id === 'sign-in';
       expired = true;
-      await tick(); if (moveFocus) resendButton?.focus();
+      await tick(); if (moveFocus) resendButton?.focus({ preventScroll: true });
       return;
     }
     if (expired) return;
@@ -94,7 +96,7 @@
       if (view.step !== 'enter' || expired || !expiresAt || Date.now() < expiresAt) return;
       const moveFocus = document.activeElement?.id === 'sign-in';
       expired = true;
-      if (moveFocus) { void tick().then(() => resendButton?.focus()); }
+      if (moveFocus) { void tick().then(() => resendButton?.focus({ preventScroll: true })); }
     }, 250);
     return () => clearInterval(timer);
   });
