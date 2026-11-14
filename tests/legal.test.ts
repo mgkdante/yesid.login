@@ -53,5 +53,5 @@ test('LOG-8: legal text is delivered in HTML without JavaScript', () => {
   const html = publicHtml('privacy');
   expect(html).toContain('data-testid="legal-body"');
   expect(html).toContain('href="mailto:contact@yesid.dev"');
-  expect(html).toContain('datetime="2026-11-08"');
+  expect(html).toContain('datetime="2026-11-14"');
 });
