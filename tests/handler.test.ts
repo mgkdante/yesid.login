@@ -334,7 +334,7 @@ test('legal shells work without a session, are indexable and retain script CSP',
   expect(await (await request('/legal/privacy',undefined,false)).text()).toContain('<title>Politique de confidentialité |');
   expect(await (await request('/legal/terms',undefined,false)).text()).toContain('<title>Conditions d’utilisation |');
   const missing = await (await handler(new Request('https://login.test/nope/',{headers:{Accept:'text/html;q=0.9'}}),env(),ctx)).text();
-  expect(missing).toContain('noindex'); expect(missing).toContain('Page not found');
+  expect(missing).toContain('noindex'); expect(missing).toContain('Page introuvable');
   for (const path of ['/legal/privacy','/legal/terms']) expect(await (await request(path,undefined,false)).text()).not.toContain('Sign in');
 });
 
@@ -483,3 +483,45 @@ test('security wrapper preserves page and asset policies exactly', async () => {
   expect(response.headers.get('Content-Security-Policy')).toBe(policy);
   expect(response.headers.get('Referrer-Policy')).toBe('same-origin');
 });
+
+// LOG-9: startup recovery stays outside sign-in/proof transitions (S-* and A-*).
+for (const lang of ['fr', 'en', 'es']) {
+  test(`startup shells are single-language and script-safe in ${lang}`, async () => {
+    const loading = { fr: 'Chargement de la connexion…', en: 'Loading sign-in…', es: 'Cargando el inicio de sesión…' };
+    const nojs = { fr: 'Activez JavaScript', en: 'Enable JavaScript', es: 'Activa JavaScript' };
+    for (const path of ['/', '/auth/popup', '/account', '/a/people', '/missing/']) {
+      const response = await handler(new Request('https://login.test' + path + '?lang=' + lang, { headers: { Accept: 'text/html' } }), env(), ctx);
+      const html = await response.text();
+      expect(html).toContain(`<html lang="${lang}"`);
+      expect(html).toContain('<noscript>');
+      if (path !== '/missing/') expect(html).toContain(nojs[lang as keyof typeof nojs]);
+      if (path !== '/missing/') expect(html).toContain(loading[lang as keyof typeof loading]);
+      for (const other of ['fr', 'en', 'es'].filter(value => value !== lang)) {
+        expect(html).not.toContain(loading[other as keyof typeof loading]);
+        expect(html).not.toContain(nojs[other as keyof typeof nojs]);
+      }
+      for (const script of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) {
+        expect(script[1]).toContain('src='); expect(script[2]).toBe('');
+      }
+    }
+  });
+}
+test('startup shell locale defaults to French for missing or unallowlisted language', async () => {
+  for (const query of ['', '?lang=de', '?lang=%22%3E']) {
+    expect(await (await request('/' + query, undefined, false)).text()).toContain('<html lang="fr"');
+  }
+});
+
+// Frozen response values from main at cd0a9f7; independent of imported page constants.
+for (const path of ['/', '/auth/popup', '/account', '/a/people', '/missing/']) {
+  test(`LOG-9 preserves main response headers for ${path}`, async () => {
+    const response = await handler(new Request('https://login.test' + path, { headers: { Accept: 'text/html' } }), env(), ctx);
+    expect(Object.fromEntries(response.headers)).toEqual({
+      'cache-control': 'no-store, no-transform', 'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': "default-src 'none'; script-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff',
+      'strict-transport-security': 'max-age=63072000; includeSubDomains',
+      'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'x-robots-tag': 'noindex, nofollow'
+    });
+  });
+}
