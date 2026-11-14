@@ -36,7 +36,7 @@
     language={{ locale, locales, href: languageHref, label: text.language, names: { fr: 'Français', en: 'English', es: 'Español' }, reload: true }} />
   <div class="shell" class:shell-center={center}>{@render children()}</div>
   {#if location.pathname === '/'}<div class="construction-ground" aria-hidden="true"><ConstructionProps layout="spread" floodlight /></div>{/if}
-  <SiteFooter tagline={text.footerTagline} {groups} statusPrefix={text.footerStatus} liveLabel={text.footerLive}>
+  <SiteFooter tagline={text.footerTagline} {groups}>
     {#snippet brand()}
       <span class="brand-cluster"><Wordmark href="https://yesid.dev" external animate={false} class="text-lg" /><span class="brand-divider" aria-hidden="true"></span><a class="brand-product" href={home}>login</a></span>
     {/snippet}
