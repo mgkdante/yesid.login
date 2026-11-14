@@ -9,7 +9,7 @@ import type { Env } from './env.ts';
 import { findSite, isMember, sitesFor, validSlug } from './sites.ts';
 import { handleRest, handleGraphql } from './relay.ts';
 import { siteConfig } from './config.ts';
-import { POPUP_HTML, LOGIN_HEADERS, HOME_HTML, editorHtml, EDITOR_HEADERS } from './pages.ts';
+import { LOGIN_HEADERS, homeHtml, editorHtml, EDITOR_HEADERS } from './pages.ts';
 import { confirmSignOut, page, denied, json, sameCodeFailure } from './responses.ts';
 import { canManage, people } from './people.ts';
 import { atLeast, claimCode } from './code-requests.ts';
@@ -99,15 +99,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, lookup: 
   if (path === ANALYTICS_ENDPOINT) return relayAnalytics(request);
   // The first published addresses, in case they were shared.
   if (path === '/privacy' || path === '/terms') return Response.redirect(`${url.origin}/legal${path}${url.search}`, 301);
-  if (path === '/auth/popup') return page(POPUP_HTML, 'text/html; charset=utf-8', LOGIN_HEADERS);
+  if (path === '/auth/popup') return page(homeHtml(url.searchParams.get('lang')), 'text/html; charset=utf-8', LOGIN_HEADERS);
   if (path === '/account') {
     // The browser must load a public shell to supply its localStorage bearer.
-    if (!request.headers.has('Authorization')) return page(HOME_HTML, 'text/html; charset=utf-8', LOGIN_HEADERS);
+    if (!request.headers.has('Authorization')) return page(homeHtml(url.searchParams.get('lang')), 'text/html; charset=utf-8', LOGIN_HEADERS);
     const editor = await lookup(request, env, ctx);
     if (!editor) return denied('Sign in required', 401);
-    return editor.siteSlug ? page(HOME_HTML, 'text/html; charset=utf-8', LOGIN_HEADERS) : denied('Not allowed', 403);
+    return editor.siteSlug ? page(homeHtml(url.searchParams.get('lang')), 'text/html; charset=utf-8', LOGIN_HEADERS) : denied('Not allowed', 403);
   }
-  if (path === '/') return page(HOME_HTML, 'text/html; charset=utf-8', LOGIN_HEADERS);
+  if (path === '/') return page(homeHtml(url.searchParams.get('lang')), 'text/html; charset=utf-8', LOGIN_HEADERS);
   if (path === '/admin' || path === '/admin/') return Response.redirect(`${url.origin}/`, 302);
   if (path.startsWith('/editor/') || path.startsWith('/login/')) return env.ASSETS.fetch(request);
   // Icon services read only the root /favicon.ico; nothing else at the root comes from assets.
@@ -136,7 +136,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, lookup: 
   const suffix = '/' + parts.join('/');
   if (parts.length === 0) return Response.redirect(`${url.origin}/${slug}/`, 302);
   if (suffix === '/') return page(editorHtml(slug), 'text/html; charset=utf-8', EDITOR_HEADERS);
-  if (suffix === '/people') return page(HOME_HTML, 'text/html; charset=utf-8', LOGIN_HEADERS);
+  if (suffix === '/people') return page(homeHtml(url.searchParams.get('lang')), 'text/html; charset=utf-8', LOGIN_HEADERS);
   if (suffix.startsWith('/people/')) {
     const editor = await lookup(request, env, ctx);
     if (!editor) return denied('Sign in required', 401);
@@ -167,7 +167,7 @@ function notFound(request: Request): Response {
   const path = new URL(request.url).pathname;
   const api = /\/(?:api|auth)(?:\/|$)|\/people\/|\/config\.yml$/.test(path);
   if (api || !acceptsHtml(request.headers.get('Accept'))) return denied('Not found', 404);
-  return new Response(publicHtml('not-found'), { status: 404, headers: { ...LOGIN_HEADERS, 'Content-Type': 'text/html; charset=utf-8' } });
+  return new Response(publicHtml('not-found', new URL(request.url).searchParams.get('lang')), { status: 404, headers: { ...LOGIN_HEADERS, 'Content-Type': 'text/html; charset=utf-8' } });
 }
 const PRODUCTION_HOST = 'login.yesid.dev';
 /** Decided by the address, not a setting: staging and local copies ask crawlers to keep out. */

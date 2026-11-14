@@ -1,4 +1,4 @@
-import { mount } from 'svelte';
+import { mount, unmount, flushSync } from 'svelte';
 import { configureUi } from '@yesid/ui/cn';
 import App from './App.svelte';
 import { startAnalytics } from './analytics';
@@ -13,9 +13,25 @@ async function start() {
     : /^\/[^/]+\/people$/.test(path) ? await import('./People.svelte')
     : path === '/account' ? await import('./Account.svelte') : { default: App };
   const target = document.getElementById('app')!;
-  target.replaceChildren();
-  mount(component.default, { target });
+  const language = document.documentElement.lang;
+  const fallback = document.createDocumentFragment();
+  while (target.firstChild) fallback.appendChild(target.firstChild);
+  let app: ReturnType<typeof mount> | undefined;
+  try {
+    app = mount(component.default, { target });
+    flushSync();
+    window.dispatchEvent(new Event('login-startup-mounted'));
+  } catch (error) {
+    try {
+      if (app) await unmount(app);
+    } finally {
+      target.replaceChildren(fallback);
+      document.documentElement.lang = language;
+    }
+    throw error;
+  }
 }
-void start().catch(() => { const status = document.querySelector('#app [role="status"]');
-  if (status) status.textContent = 'Page indisponible, rechargez. Page unavailable, please reload. Página no disponible, recarga.';
-  console.error('Login startup failed'); });
+void start().catch(() => {
+  window.dispatchEvent(new Event('login-startup-failed'));
+  console.error('Login startup failed');
+});
