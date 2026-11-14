@@ -1,5 +1,5 @@
 @import '/login/tokens.css';
-body:has(#editor-start) { margin: 0; background: var(--background); color: var(--foreground); font-family: Inter, sans-serif; }
+body:has(#editor-start) { margin: 0; background: var(--background); color: var(--foreground); font-family: 'Inter Variable', sans-serif; }
 #editor-start { box-sizing: border-box; width: min(100%, 40rem); margin: 12svh auto; padding: 2rem; border-top: 8px solid var(--accent); background: var(--card); overflow-wrap: anywhere; }
 #editor-start h1 { font-size: var(--text-heading); line-height: 1.3; }
 #editor-start .editor-station { font-family: var(--font-mono); color: var(--accent-text); }
@@ -8,3 +8,6 @@ body:has(#editor-start) { margin: 0; background: var(--background); color: var(-
 #editor-start footer { display: flex; gap: 1rem; margin-top: 2rem; }
 #editor-start a, #editor-start button { min-height: 44px; display: inline-flex; align-items: center; }
 #editor-start :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+#editor-start .editor-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+#editor-start [hidden] { display: none; }

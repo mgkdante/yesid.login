@@ -1,4 +1,4 @@
-import { test, expect } from 'bun:test';
+import { test, expect, jest } from 'bun:test';
 import { createController, popupHandover, USER_KEY, validTarget, type Ports, type State } from '../login/controller.ts';
 import { RESERVED } from '../src/sites.ts';
 function fixture(search = '', responses: Response[] = []) {
@@ -11,7 +11,7 @@ function fixture(search = '', responses: Response[] = []) {
       setItem: (key, value) => { storage.set(key, value); }, removeItem: key => { storage.delete(key); }
     },
     fetch: (async (url, init) => { calls.push({ url: String(url), init }); return responses.shift()!; }) as typeof fetch,
-    navigate: path => navigations.push(path), handOver: () => true
+    navigate: path => navigations.push(path), handOver: () => ({ retry() {}, dispose() {} })
   };
   const controller = createController(ports, false, value => { state = value; });
   return { controller, storage, navigations, calls, ports, get state() { return state; } };
@@ -49,22 +49,31 @@ test('verify requires a token before choosing sites', async () => {
   await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('empty');
   expect(f.navigations).toEqual([]);
 });
-test('popup requires exact origin, opener and handshake', () => {
-  const sent: unknown[][] = [];
-  const opener = { postMessage: (...args: unknown[]) => sent.push(args) };
-  let receive: (event: unknown) => void = () => {};
-  const host = { opener, location: { origin: 'https://login.example.test' }, addEventListener: (_: string, callback: typeof receive) => { receive = callback; } };
-  expect(popupHandover(host as unknown as Window, 'fake')).toBe(true);
-  expect(sent).toEqual([['authorizing:github', host.location.origin]]);
+test('H-4 to H-7 captures opener, validates acknowledgement, sends once and cleans up', () => {
+  const sent: unknown[][] = [], messages: string[] = [];
+  const opener = { closed: false, postMessage: (...args: unknown[]) => sent.push(args) };
+  const listeners = new Map<string, Function>();
+  const host = { opener, location: { origin: 'https://login.example.test' },
+    addEventListener: (name: string, callback: Function) => listeners.set(name, callback),
+    removeEventListener: (name: string) => listeners.delete(name) };
+  const handoff = popupHandover(host as unknown as Window, 'fake', message => messages.push(message));
+  const receive = listeners.get('message')!;
+  expect(messages).toEqual(['openingEditor']);
+  handoff.retry(); expect(listeners.size).toBe(2); expect(sent).toHaveLength(2);
   for (const event of [
     { origin: 'https://evil.test', source: opener, data: 'authorizing:github' },
     { origin: host.location.origin, source: {}, data: 'authorizing:github' },
-    { origin: host.location.origin, source: opener, data: 'wrong' }
+    { origin: host.location.origin, source: opener, data: {} }
   ]) receive(event);
-  expect(sent).toHaveLength(1);
-  receive({ origin: host.location.origin, source: opener, data: 'authorizing:github' });
-  expect(sent[1]).toEqual(['authorization:github:success:{"token":"fake"}', host.location.origin]);
-  expect(popupHandover({ ...host, opener: null } as unknown as Window, 'fake')).toBe(false);
+  expect(sent).toHaveLength(2);
+  host.opener = { closed: false, postMessage() { throw Error('wrong opener'); } };
+  const ack = { origin: host.location.origin, source: opener, data: 'authorizing:github' };
+  receive(ack); receive(ack); handoff.retry();
+  expect(sent).toHaveLength(3);
+  expect(sent[2]).toEqual(['authorization:github:success:{"token":"fake"}', host.location.origin]);
+  expect(messages.at(-1)).toBe('connected'); expect(listeners.size).toBe(0);
+  popupHandover({ ...host, opener: null } as unknown as Window, 'fake', message => messages.push(message));
+  expect(messages.at(-1)).toBe('reopen'); expect(listeners.size).toBe(0);
 });
 
 test('network failures restore controls and expose only localized message keys', async () => {
@@ -79,12 +88,12 @@ test('network failures restore controls and expose only localized message keys',
 test('popup verify hands off the token without writing it to storage or a URL', async () => {
   const f = fixture('', [new Response(null, { headers: { 'set-auth-token': 'fake' } }), Response.json([{slug:'a',label:'A'}]), Response.json({success:true})]);
   const handed: string[] = [];
-  f.ports.handOver = token => { handed.push(token); return true; };
+  f.ports.handOver = (token, update) => { handed.push(token); update('openingEditor'); return { retry() {}, dispose() {} }; };
   const messages: unknown[] = [];
   const popup = createController(f.ports, true, state => { messages.push(state.message); });
   await popup.verify('a@example.test', '123456');
   expect(f.calls.map(c=>c.url)).toEqual(['/auth/api/sign-in/email-otp','/auth/sites','/auth/bind']);
-  expect(handed).toEqual(['fake']); expect(messages).toContain('connected');
+  expect(handed).toEqual(['fake']); expect(messages).toContain('openingEditor');
   expect(f.storage.size).toBe(0); expect(f.navigations).toEqual([]);
 });
 
@@ -127,10 +136,10 @@ test('switching signs out only the selected site and asks for a fresh code', asy
   f.storage.set('login.session.a','{"token":"a"}'); f.storage.set('login.session.b','{"token":"b"}');
   await f.controller.restore(); expect(f.navigations).toEqual([]);
   await f.controller.switchSite();
-  expect(f.state.step).toBe('ask'); expect(f.state.message).toBe('switchNotice');
+  expect(f.state.step).toBe('ask'); expect(f.state.message).toBeUndefined();
   expect(f.storage.has('login.session.a')).toBe(false); expect(f.storage.has('login.session.b')).toBe(true);
   expect(f.calls.at(-1)?.url).toBe('/auth/api/sign-out');
-  expect(f.navigations).toEqual(['/?switch=1']);
+  expect(f.navigations).toEqual(['/']);
 });
 
 test('S-4, S-5 format refusal sends nothing; accepted separators preserve zeros', async () => {
@@ -161,3 +170,126 @@ for (const [header, minutes] of [['0.1', 1], ['1', 1], ['60', 1], ['60.1', 2], [
     expect(f.state.message).toBe('rate'); expect(f.state.retryMinutes).toBe(minutes);
   });
 }
+
+
+test('S-13 list failure keeps token in memory and retries without another code', async () => {
+  const f = fixture('', [new Response(null, { status: 503 }), Response.json([])]);
+  await f.controller.choose('fake');
+  expect(f.state.step).toBe('sitesFailure'); expect(f.state.message).toBe('sitesError');
+  expect(f.controller.token).toBe('fake');
+  await f.controller.retrySites(); expect(f.state.message).toBe('empty');
+});
+
+test('S-13, H-1 a bind 401 returns to Email with session-ended wording', async () => {
+  const f = fixture('?site=a', [Response.json([{slug:'a',label:'A'}]), new Response(null,{status:401})]);
+  f.storage.set('login.session.a', 'old');
+  await f.controller.choose('fake');
+  expect(f.state.step).toBe('ask'); expect(f.state.message).toBe('sessionEnded');
+  expect(f.storage.size).toBe(0); expect(f.controller.token).toBe('');
+});
+
+
+test('S-14 to S-17 switch takes precedence with one site; Keep editing binds it again', async () => {
+  const f = fixture('?site=a&switch', [Response.json([{slug:'a',label:'A'}]), new Response()]);
+  await f.controller.choose('fake'); expect(f.state.message).toBe('switchNotice'); expect(f.calls).toHaveLength(1);
+  await f.controller.open('a'); expect(f.navigations).toEqual(['/a/']);
+});
+
+test('S-15, H-1 opening failure belongs to its row and retries bind', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'},{slug:'b',label:'B'}]), new Response(null,{status:403}), new Response()]);
+  await f.controller.choose('fake'); await f.controller.open('b');
+  expect(f.state.openError).toBe('b'); expect(f.state.busy).toBe(false);
+  await f.controller.open('b'); expect(f.navigations).toEqual(['/b/']); expect(f.state.openError).toBeUndefined();
+});
+
+
+test('S-17 failed server sign-out keeps the switch question; storage removal cannot undo success', async () => {
+  const f = fixture('?site=a&switch', [Response.json([{slug:'a',label:'A'}]), new Response(null,{status:502}), new Response()]);
+  await f.controller.choose('fake'); await f.controller.switchSite();
+  expect(f.state.step).toBe('sites'); expect(f.state.switching).toBe(true); expect(f.controller.token).toBe('fake');
+  f.ports.storage.removeItem = () => { throw Error('blocked'); };
+  await f.controller.switchSite(); expect(f.state.step).toBe('ask'); expect(f.controller.token).toBe('');
+});
+
+test('H-2 storage refusal stays on its row without navigating', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response()]);
+  f.ports.storage.setItem = () => { throw Error('blocked'); };
+  await f.controller.choose('fake'); expect(f.state.message).toBe('editorStorage'); expect(f.state.openError).toBe('a'); expect(f.navigations).toEqual([]);
+});
+
+for (const sites of [null, {}, [null], [{slug:'admin',label:'No'}], [{slug:'a'}]]) {
+  test('S-13 malformed list retains the in-memory retry path: ' + JSON.stringify(sites), async () => {
+    const f = fixture('', [Response.json(sites)]); await f.controller.choose('fake');
+    expect(f.state.step).toBe('sitesFailure'); expect(f.state.message).toBe('sitesError'); expect(f.controller.token).toBe('fake');
+  });
+}
+
+test('S-15 only the selected row is busy, and concurrent opening is ignored', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'},{slug:'b',label:'B'}])]);
+  await f.controller.choose('fake');
+  let finish!: (response: Response) => void;
+  f.ports.fetch = (() => new Promise<Response>(resolve => { finish = resolve; })) as unknown as typeof fetch;
+  const pending = f.controller.open('a');
+  expect(f.state.opening).toBe('a'); expect(f.state.busy).toBe(true);
+  await f.controller.open('b'); expect(f.state.opening).toBe('a');
+  finish(new Response(null, {status:403})); await pending;
+  expect(f.state.opening).toBeUndefined(); expect(f.state.openError).toBe('a');
+});
+
+
+test('S-16 empty screen survives a failed sign-out with its recovery action', async () => {
+  const f = fixture('', [Response.json([]), new Response(null,{status:502})]);
+  await f.controller.choose('fake'); await f.controller.switchSite();
+  expect(f.state.step).toBe('sites'); expect(f.state.empty).toBe(true); expect(f.state.message).toBe('checkError');
+});
+
+
+test('S-13 S-14 no chooser is emitted while loading, on load failure, or before automatic opening', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response()]);
+  const stages: string[] = [];
+  const controller = createController(f.ports, false, state => stages.push(state.step));
+  await controller.choose('fake'); expect(stages).not.toContain('sites'); expect(f.navigations).toEqual(['/a/']);
+  const failed = fixture('', [new Response(null, {status:503})]);
+  await failed.controller.choose('fake'); expect(failed.state.step).toBe('sitesFailure');
+});
+
+for (const ending of ['success', 'abandon', 'cached'] as const) test(`H-5 H-7 timer and listener lifecycle: ${ending}`, () => {
+  jest.useFakeTimers();
+  try {
+    const sent: unknown[] = [], messages: string[] = [];
+    const opener = { closed: false, postMessage: (data: unknown) => sent.push(data) };
+    const listeners = new Map<string, Function>();
+    const host = { opener, location: { origin: 'https://login.test' },
+      addEventListener: (name: string, callback: Function) => listeners.set(name, callback),
+      removeEventListener: (name: string) => listeners.delete(name) };
+    const handoff = popupHandover(host as unknown as Window, 'fake', message => messages.push(message));
+    const ack = () => listeners.get('message')?.({ origin: host.location.origin, source: opener, data: 'authorizing:github' });
+    const staleReceive = listeners.get('message')!;
+    expect(jest.getTimerCount()).toBe(1);
+    if (ending === 'success') ack();
+    else listeners.get('pagehide')!({ persisted: ending === 'cached' });
+    if (ending === 'cached') {
+      expect(jest.getTimerCount()).toBe(1); expect(listeners.has('message')).toBe(true);
+      ack(); expect(sent).toHaveLength(2);
+    } else expect(sent).toHaveLength(ending === 'success' ? 2 : 1);
+    expect(jest.getTimerCount()).toBe(0); expect(listeners.size).toBe(0);
+    jest.advanceTimersByTime(20000);
+    staleReceive({ origin: host.location.origin, source: opener, data: 'authorizing:github' });
+    handoff.retry();
+    expect(sent).toHaveLength(ending === 'abandon' ? 1 : 2);
+    expect(messages).not.toContain('handoverFailed');
+  } finally { jest.useRealTimers(); }
+});
+
+
+test('H-1 H-2 direct navigation retains the selected site opening status until page leave', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response()]);
+  await f.controller.choose('fake');
+  expect(f.navigations).toEqual(['/a/']); expect(f.state.opening).toBe('a');
+});
+
+test('H-1 bind 401 clears the selected site opening state', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response(null,{status:401})]);
+  await f.controller.choose('fake');
+  expect(f.state.step).toBe('ask'); expect(f.state.opening).toBeUndefined();
+});
