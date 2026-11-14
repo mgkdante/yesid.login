@@ -1,5 +1,5 @@
 import { SHARDS, parseShard } from './shards.ts';
-import { rmSync } from 'node:fs';
+import { removeShardTempDirectory, superviseShard } from './launcher-lifecycle.ts';
 import { createShardTempDirectory } from './temp-directory.ts';
 import { resolve } from 'node:path';
 
@@ -24,14 +24,11 @@ for (let i = 0; i < args.length; i++) {
 if (!selected && process.env.LOGIN_E2E_SHARD) selected = parseShard(process.env.LOGIN_E2E_SHARD, SHARDS.length);
 const basePort = Number(process.env.LOGIN_E2E_PORT || 8799);
 if (!Number.isInteger(basePort) || basePort < 1 || basePort + SHARDS.length - 1 > 65535) throw new Error('Invalid E2E base port');
-const active = new Set<ReturnType<typeof Bun.spawn>>();
-let interrupted = false;
+const active = new Set<ReturnType<typeof superviseShard>>();
+let interruptionExitCode = 0;
 const forward = (signal: 'SIGINT' | 'SIGTERM') => {
-  interrupted = true;
-  for (const runner of active) {
-    if (process.platform === 'win32') runner.send({ type: 'e2e-signal', signal });
-    else runner.kill(signal);
-  }
+  interruptionExitCode ||= signal === 'SIGINT' ? 130 : 143;
+  for (const control of active) control.forward(signal);
 };
 const interrupt = () => forward('SIGINT');
 const terminate = () => forward('SIGTERM');
@@ -39,26 +36,38 @@ process.on('SIGINT', interrupt);
 process.on('SIGTERM', terminate);
 const started = performance.now();
 async function runShard(shard: number): Promise<number> {
-  if (interrupted) return 130;
+  if (interruptionExitCode) return interruptionExitCode;
   const start = performance.now();
   // Chromium and Miniflare inherit a private temp root: cleanup can be audited per run.
   const temp = createShardTempDirectory(shard);
   let runner: ReturnType<typeof Bun.spawn> | undefined;
+  let control: ReturnType<typeof superviseShard> | undefined;
+  let ipcLost = false;
+  let exitCode = 1;
   try {
     runner = Bun.spawn(['node', '.wrangler/e2e-runner.mjs'], {
       stdout: 'inherit', stderr: 'inherit', serialization: 'json', ipc() {},
+      onDisconnect() { if (control) control.ipcDisconnected(); else ipcLost = true; },
       env: { ...process.env, LOGIN_E2E_SHARD: `${shard}/${SHARDS.length}`,
         LOGIN_E2E_PORT: String(basePort + shard - 1),
         LOGIN_E2E_SHOTS: resolve(process.env.LOGIN_E2E_SHOTS || '.wrangler/e2e', `shard-${shard}`, 'shots'),
         TMP: temp, TEMP: temp, TMPDIR: temp }
     });
-    active.add(runner);
-    return await runner.exited;
+    control = superviseShard(runner, `shard ${shard}/${SHARDS.length}`);
+    if (ipcLost) control.ipcDisconnected();
+    active.add(control);
+    exitCode = await control.exited;
   } finally {
-    if (runner) { active.delete(runner); runner.disconnect(); }
-    rmSync(temp, { recursive: true, force: true });
+    if (control) active.delete(control);
+    try { runner?.disconnect(); }
+    catch (error) {
+      console.error(`E2E shard ${shard} IPC cleanup failure (child exit code ${exitCode})`, error);
+      exitCode ||= 1;
+    }
+    exitCode = removeShardTempDirectory(temp, exitCode);
     console.info(`timing - shard ${shard}/${SHARDS.length}: ${Math.round(performance.now() - start)} ms (including cleanup)`);
   }
+  return exitCode;
 }
 try {
   const shards = selected ? [selected] : SHARDS.map((_, index) => index + 1);
@@ -71,7 +80,7 @@ try {
       else { console.error(result.reason); results.push(1); }
     }
   }
-  process.exitCode = results.find(code => code !== 0) || 0;
+  process.exitCode = results.find(code => code !== 0) || interruptionExitCode;
 } finally {
   process.off('SIGINT', interrupt);
   process.off('SIGTERM', terminate);

@@ -216,7 +216,7 @@ The temporary worktree must contain the deploy-now scripts (older commits may no
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-$env:PATH = "C:\Users\otalo\Yesito\projects\brand\yesid.static-template\.tools;$env:PATH"
+$env:PATH = "C:\Users\<user>\Yesito\projects\brand\yesid.static-template\.tools;$env:PATH"
 $deploySha = '<sha>'
 $deploySource = (Get-Location).Path
 if (git status --porcelain) { throw 'Start from a clean tree.' }
@@ -268,8 +268,12 @@ Screenshots are under `.wrangler/e2e/shard-N/shots` (or under `LOGIN_E2E_SHOTS/s
 Private temporary directories under the OS temp directory (`yl-e2e-N-*`) are removed
 after each process exits. Keeping these outside the checkout prevents Windows SQLite
 path-length failures: even `persist: false` uses on-disk temporary D1 storage. Interrupts are forwarded to every active shard for
-bounded cleanup;
-a sequential run stops starting new shards after interruption.
+bounded cleanup. The parent force-terminates a child that remains alive seven seconds
+after signal forwarding or IPC disconnection (the five-second child cleanup limit plus
+a two-second margin). A sequential run stops starting new shards after interruption.
+Folder removal allows five filesystem retries at a 200 ms base delay for lingering
+Windows handles. A persistent cleanup failure reports its path and child status, fails
+a passing shard, and preserves an already failing child's exit code. It never reruns a scenario.
 
 For the local D1 contention probe, use `node e2e/reproduce-d1.mjs cli traffic 8836` and compare with `node e2e/reproduce-d1.mjs binding traffic 8836`. `idle` disables traffic; the optional last argument selects a persistence directory. See [the diagnosis record](docs/d1-e2e-diagnosis.md).
 

@@ -1,4 +1,4 @@
-import { SHARDS, assertShardAssignment, parseShard } from './shards.ts';
+import { SCENARIO_NAMES, SHARDS, assertShardAssignment, parseShard, type ScenarioName } from './shards.ts';
 import { sitesHandoff, editorLoading } from './sites-handoff.ts';
 import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
@@ -14,6 +14,8 @@ import { resolve } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
 import { startLocalWorker } from './local-worker.ts';
 import { cleanup, cleanupStarted } from './lifecycle.ts';
+
+assertShardAssignment(SCENARIO_NAMES, SHARDS);
 
 process.env.WRANGLER_SEND_METRICS = 'false';
 const PORT = Number(process.env.LOGIN_E2E_PORT || 8799);
@@ -1031,10 +1033,10 @@ try {
     accountFlow: () => accountFlow(page),
     visualMatrix: () => visualMatrix(page),
     emailSamples: () => emailSamples(launched),
-  };
+  } satisfies Record<ScenarioName, () => Promise<void>>;
   assertShardAssignment(Object.keys(scenarios), SHARDS);
   for (const name of SHARDS[shard - 1]) {
-    await timed(name, scenarios[name as keyof typeof scenarios]);
+    await timed(name, scenarios[name]);
   }
   writeFileSync(resolve(SHOTS,'index.md'), '# Local polish and legal checks\n\n'+captures.map(file=>`- [${file}](${file})`).join('\n'));
   check('no script errors or security policy violations on the sign-in pages', problems.length === 0, problems.slice(0, 3).join(' | ').slice(0, 400));
