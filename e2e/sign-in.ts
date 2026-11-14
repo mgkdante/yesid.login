@@ -1,3 +1,4 @@
+import { accountNavigation } from './account-navigation.ts';
 import { exampleSiteSql } from '../scripts/example-fixture.ts';
 // A real sign-in in a real browser, against the real Worker and a local database: type a code, press the button, land in the editor.
 // Unit tests can't catch a page that refuses a valid code, so run this before deploying any login change: `bun run test:e2e`.
@@ -422,6 +423,7 @@ try {
   await analyticsCounting(browser);
   await themeAtSendTime(page);
   await legalNavigation(page);
+  await accountNavigation(browser, sql, requestCode, CODE, ORIGIN, SHOTS, check);
   await signsInWithARealCode(page);
   await refusesAWrongCode(page);
   await keepsItsPlaceWhenLanguageChanges(page);

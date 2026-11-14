@@ -158,7 +158,8 @@ The footer is the shared SiteFooter, as on yesid.dev and Transit, and the header
 
 Sign-in step two stores only its step, email and five-minute deadline in sessionStorage. Language links reload the full document and preserve the site hint. Codes and tokens never enter that entry. It is removed on success, return to step one or expiry. Unavailable storage is reported before switching languages.
 
-`/account` is linked only from People. A signed-in person first requests a code to their current address,
+`/account?site=<slug>` is linked from the editor as My account for every signed-in role, and from People.
+A signed-in person first requests a code to their current address,
 then submits it with the new address to request a destination code, then confirms that code.
 The current-address request reuses `/email-otp/send-verification-otp` with `type: email-verification`;
 the Worker ignores any caller-supplied address and uses the session address. Only the exact two native
