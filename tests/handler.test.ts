@@ -334,7 +334,7 @@ test('legal shells work without a session, are indexable and retain script CSP',
   expect(await (await request('/legal/privacy',undefined,false)).text()).toContain('<title>Politique de confidentialité |');
   expect(await (await request('/legal/terms',undefined,false)).text()).toContain('<title>Conditions d’utilisation |');
   const missing = await (await handler(new Request('https://login.test/nope/',{headers:{Accept:'text/html;q=0.9'}}),env(),ctx)).text();
-  expect(missing).toContain('noindex'); expect(missing).toContain('Page not found');
+  expect(missing).toContain('noindex'); expect(missing).toContain('Page introuvable');
   for (const path of ['/legal/privacy','/legal/terms']) expect(await (await request(path,undefined,false)).text()).not.toContain('Sign in');
 });
 
@@ -482,4 +482,32 @@ test('security wrapper preserves page and asset policies exactly', async () => {
   const response = await handler(new Request('https://login.test/editor/boot.js'), e, ctx);
   expect(response.headers.get('Content-Security-Policy')).toBe(policy);
   expect(response.headers.get('Referrer-Policy')).toBe('same-origin');
+});
+
+// LOG-9: startup recovery stays outside sign-in/proof transitions (S-* and A-*).
+for (const lang of ['fr', 'en', 'es']) {
+  test(`startup shells are single-language and script-safe in ${lang}`, async () => {
+    const loading = { fr: 'Chargement de la connexion…', en: 'Loading sign-in…', es: 'Cargando el inicio de sesión…' };
+    const nojs = { fr: 'Activez JavaScript', en: 'Enable JavaScript', es: 'Activa JavaScript' };
+    for (const path of ['/', '/auth/popup', '/account', '/a/people', '/missing/']) {
+      const response = await handler(new Request('https://login.test' + path + '?lang=' + lang, { headers: { Accept: 'text/html' } }), env(), ctx);
+      const html = await response.text();
+      expect(html).toContain(`<html lang="${lang}"`);
+      expect(html).toContain('<noscript>');
+      expect(html).toContain(nojs[lang as keyof typeof nojs]);
+      expect(html).toContain(loading[lang as keyof typeof loading]);
+      for (const other of ['fr', 'en', 'es'].filter(value => value !== lang)) {
+        expect(html).not.toContain(loading[other as keyof typeof loading]);
+        expect(html).not.toContain(nojs[other as keyof typeof nojs]);
+      }
+      for (const script of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) {
+        expect(script[1]).toContain('src='); expect(script[2]).toBe('');
+      }
+    }
+  });
+}
+test('startup shell locale defaults to French for missing or unallowlisted language', async () => {
+  for (const query of ['', '?lang=de', '?lang=%22%3E']) {
+    expect(await (await request('/' + query, undefined, false)).text()).toContain('<html lang="fr"');
+  }
 });

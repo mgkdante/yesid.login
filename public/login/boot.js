@@ -1,4 +1,17 @@
 (() => {
+  const startupLanguage = document.documentElement.lang;
+  document.documentElement.dataset.startup = 'loading';
+  // This script loads independently, so even a missing or throwing app bundle has recovery.
+  const failed = () => {
+    const status = document.querySelector('[data-startup-failure]');
+    if (status) {
+      document.documentElement.lang = startupLanguage;
+      status.textContent = status.dataset.startupFailure;
+    }
+  };
+  window.addEventListener('error', failed, true);
+  window.addEventListener('unhandledrejection', failed);
+  window.addEventListener('login-startup-failed', failed);
   let selected;
   try { selected = localStorage.getItem('theme'); } catch { /* Use the system preference. */ }
   document.documentElement.dataset.theme = selected === 'dark' || selected === 'light'

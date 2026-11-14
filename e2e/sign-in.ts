@@ -165,6 +165,52 @@ async function keepsItsPlaceWhenLanguageChanges(page: Page) {
   check('changing language keeps step two', lang === 'es');
 }
 
+// LOG-9 is startup only: no S-*, H-* or A-* proof transition is changed.
+async function startupRecovery(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const copy = {
+    fr: ['Impossible de charger la connexion. Rechargez la page ou contactez Yesid.', 'Activez JavaScript pour vous connecter. Rechargez ensuite cette page.', 'Recharger'],
+    en: ['We could not load sign-in. Reload the page or contact Yesid.', 'Enable JavaScript to sign in. Then reload this page.', 'Reload'],
+    es: ['No pudimos cargar el inicio de sesión. Recarga la página o contacta a Yesid.', 'Activa JavaScript para iniciar sesión. Luego recarga esta página.', 'Recargar']
+  };
+  for (const lang of ['fr', 'en', 'es'] as const) {
+    for (const mode of ['blocked', 'throwing', 'mount', 'nojs']) {
+      const context = await browser.newContext({ javaScriptEnabled: mode !== 'nojs', viewport: { width: 390, height: 844 } });
+      try {
+        const page = await context.newPage();
+        if (mode === 'blocked') await page.route('**/login/build/app.js', route => route.abort());
+        if (mode === 'throwing') await page.route('**/login/build/app.js', route => route.fulfill({ contentType: 'text/javascript', body: 'throw new Error("Forced startup failure");' }));
+        if (mode === 'mount') await page.addInitScript(() => {
+          const append = Node.prototype.appendChild;
+          Node.prototype.appendChild = function<T extends Node>(node: T): T {
+            const result = append.call(this, node) as T;
+            if (this instanceof Element && this.id === 'app') throw new Error('Forced mount failure');
+            return result;
+          };
+        });
+        for (const path of ['/', '/auth/popup', '/account', '/example/people', '/missing/']) {
+          await page.goto(`${ORIGIN}${path}?lang=${lang}`);
+          check(`LOG-9 ${mode} ${path} ${lang}: language`, await page.locator('html').getAttribute('lang') === lang);
+          if (mode === 'nojs') {
+            check(`LOG-9 nojs ${path} ${lang}: instruction`, await page.locator('noscript').innerText() === copy[lang][1]);
+            check(`LOG-9 nojs ${path} ${lang}: no loading loop`, !await page.getByRole('status').isVisible());
+          } else {
+            await page.waitForFunction(text => document.querySelector('[data-startup-failure]')?.textContent === text, copy[lang][0]);
+            check(`LOG-9 ${mode} ${path} ${lang}: failure and reload`, await page.getByRole('status').innerText() === copy[lang][0]
+              && await page.getByRole('link', { name: copy[lang][2], exact: true }).isVisible());
+          }
+          await page.screenshot({ path: resolve(SHOTS, `startup-${mode}-${lang}-${path.replaceAll('/', '') || 'home'}.png`), fullPage: true });
+        }
+        if (mode === 'blocked') {
+          await page.unroute('**/login/build/app.js');
+          await page.goto(`${ORIGIN}/?lang=${lang}`);
+          await page.locator('#email').waitFor();
+          check(`LOG-9 ${lang}: fallback removed after mount`, await page.locator('[data-startup-failure]').count() === 0);
+        }
+      } finally { await context.close(); }
+    }
+  }
+}
+
 async function legalWithoutJavaScript(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   try {
@@ -465,6 +511,7 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
+  await startupRecovery(browser);
   await legalWithoutJavaScript(browser);
   await legalLanguageHash(page);
   await analyticsCounting(browser);

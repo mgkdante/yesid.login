@@ -15,7 +15,7 @@ test('external boot uses system theme only when there is no valid explicit choic
     for (const stored of [null, 'dark', 'light', 'invalid']) {
       const root = { dataset: {} as Record<string, string> };
       runInNewContext(source, {
-        document: { documentElement: root, querySelector: () => null }, localStorage: { getItem: () => stored },
+        window: { addEventListener: () => {} }, document: { documentElement: root, querySelector: () => null }, localStorage: { getItem: () => stored },
         matchMedia: () => ({ matches: systemDark })
       });
       expect(root.dataset.theme).toBe(stored === 'dark' || stored === 'light' ? stored : systemDark ? 'dark' : 'light');
