@@ -31,9 +31,9 @@ export interface Email {
 export type EmailLanguage = 'fr' | 'en' | 'es';
 export const emailLanguage = (value: unknown): EmailLanguage => value === 'en' || value === 'es' ? value : 'fr';
 const words = {
-  fr: { subject: 'Votre code de connexion :', title: 'Votre code de connexion', editor: 'Éditeur du site', intro: 'Votre code de connexion est', note: 'Il expire dans 5 minutes. Si vous n’avez rien demandé, ignorez ce message.' },
-  en: { subject: 'Your sign-in code:', title: 'Your sign-in code', editor: 'Site editor', intro: 'Your sign-in code is', note: 'It expires in 5 minutes. If you did not request it, ignore this message.' },
-  es: { subject: 'Tu código de inicio de sesión:', title: 'Tu código de inicio de sesión', editor: 'Editor del sitio', intro: 'Tu código de inicio de sesión es', note: 'Vence en 5 minutos. Si no lo solicitaste, ignora este mensaje.' }
+  fr: { subject: 'Votre code de connexion :', title: 'Votre code de connexion', editor: 'Éditeur du site', note: 'Entrez ce code sur la page de connexion. Il expire dans 5 minutes. Si vous n’avez rien demandé, ignorez ce message.' },
+  en: { subject: 'Your sign-in code:', title: 'Your sign-in code', editor: 'Site editor', note: 'Enter this code on the sign-in page. It expires in 5 minutes. If you did not request it, ignore this message.' },
+  es: { subject: 'Tu código de inicio de sesión:', title: 'Tu código de inicio de sesión', editor: 'Editor del sitio', note: 'Escribe este código en la página de inicio de sesión. Vence en 5 minutos. Si no lo solicitaste, ignora este mensaje.' }
 };
 
 /** The passcode email in the yesid.dev design, with a plain text version for every mail app. */
@@ -44,7 +44,7 @@ export function passcodeEmail(code: string, language: EmailLanguage = 'fr', them
   const text = words[emailLanguage(language)];
   return {
     subject: `${text.subject} ${code}`,
-    text: `${text.intro} ${code}.\n\n${text.note}\n\nlogin.yesid.dev\n`,
+    text: `${text.title}\n\n${code}\n\n${text.note}\n\nlogin.yesid.dev\n`,
     html: emailShell(text.title, `<p class="code" style="font-family:${MONO};font-size:32px;font-weight:700;letter-spacing:9px;background-color:${dark.card};border:1px solid ${dark.border};border-radius:8px;padding:22px 12px;text-align:center;">${code}</p><p>${text.note}</p>`, language, theme)
   };
 }
@@ -52,21 +52,25 @@ export function passcodeEmail(code: string, language: EmailLanguage = 'fr', them
 export const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 export function welcomeEmail(label: string, slug: string, language: EmailLanguage): Email {
   const words = {
-    fr: ['Accès à l’éditeur de', 'Vous avez maintenant accès à l’éditeur de', 'Ouvrir l’éditeur'],
-    en: ['Access to the editor for', 'You now have access to the editor for', 'Open the editor'],
-    es: ['Acceso al editor de', 'Ya tienes acceso al editor de', 'Abrir el editor']
+    fr: ['Accès à l’éditeur de', 'Vous pouvez maintenant modifier', 'Ouvrir l’éditeur'],
+    en: ['Access to the editor for', 'You can now edit', 'Open the editor'],
+    es: ['Acceso al editor de', 'Ya puedes editar', 'Abrir el editor']
   }[language];
   const url = `https://login.yesid.dev/${encodeURIComponent(slug)}/`;
-  const note = { fr: 'Connectez-vous dans les 7 jours. Ignorez ce message si vous ne l’attendiez pas.', en: 'Sign in within 7 days. Ignore this message if you were not expecting it.', es: 'Inicia sesión dentro de 7 días. Ignora este mensaje si no lo esperabas.' }[language];
+  const note = {
+    fr: 'Connectez-vous avec cette adresse courriel. Nous vous enverrons un code à 6 chiffres. Aucun mot de passe requis. Connectez-vous dans les 7 jours. Ignorez ce message si vous ne l’attendiez pas.',
+    en: 'Sign in with this email address. We will send you a 6-digit code. No password needed. Sign in within 7 days. Ignore this message if you were not expecting it.',
+    es: 'Inicia sesión con este correo. Te enviaremos un código de 6 dígitos. No necesitas contraseña. Inicia sesión dentro de 7 días. Ignora este mensaje si no lo esperabas.'
+  }[language];
   return adaptive({ subject: `${words[0]} ${label}`, text: `${words[1]} ${label}.\n${note}\n${url}\n`,
-    html: emailShell(words[0], `<p>${words[1]} ${escapeHtml(label)}.</p><p>${note}</p><a href="${url}">${words[2]}</a>`, language) });
+    html: emailShell(`${words[1]} ${label}`, `<p>${words[1]} ${escapeHtml(label)}.</p><p>${note}</p><a href="${url}">${words[2]}</a>`, language) });
 }
 
 export function emailChangedEmail(language: EmailLanguage): Email {
   const [subject, note] = {
-    fr: ['Courriel modifié', 'Le courriel de votre compte a été modifié. Si vous n’avez pas demandé ce changement, contactez la personne responsable de votre site.'],
+    fr: ['Courriel modifié', 'L’adresse courriel de votre compte a changé. Si vous n’avez pas demandé ce changement, contactez la personne responsable de votre site.'],
     en: ['Email changed', 'Your account email has changed. If you did not request this change, contact the person responsible for your site.'],
-    es: ['Correo modificado', 'El correo de tu cuenta ha cambiado. Si no solicitaste este cambio, contacta a la persona responsable de tu sitio.']
+    es: ['Correo modificado', 'Cambió el correo de tu cuenta. Si no solicitaste este cambio, contacta a la persona responsable de tu sitio.']
   }[language];
   return adaptive({ subject, text: `${note}\n\nlogin.yesid.dev`, html: emailShell(subject, `<p>${note}</p>`, language) });
 }
@@ -79,9 +83,10 @@ function adaptive(email: Email): Email {
   return email;
 }
 export function ownerNoticeEmail(email: string, label: string, slug: string): Email {
+  // Owner notices stay French until a recipient language preference exists.
   const url = `https://login.yesid.dev/${encodeURIComponent(slug)}/people`;
   // A sign-in confirms the address for every invitation it has, so this says what it proves, not that they visited this site.
-  const note = `${email} a confirmé son adresse et peut maintenant modifier ${label}. Si vous ne reconnaissez pas cette adresse, retirez-la sur la page Personnes.`;
+  const note = `${email} a confirmé son adresse et peut maintenant modifier ${label}. Si vous ne reconnaissez pas cette adresse, retirez son accès sur la page Personnes.`;
   return adaptive({ subject: 'Nouvelle personne sur votre site', text: `${note}\n${url}`,
     html: emailShell('Nouvelle personne', `<p>${escapeHtml(note)}</p><a href="${url}">Gérer les personnes</a>`, 'fr') });
 }

@@ -33,7 +33,7 @@
       return response;
     }, storage: localStore, search: location.search,
     navigate: path => { clearStep(sessionStore); location.assign(path); }, handOver: token => popupHandover(window, token)
-  }, location.pathname === '/auth/popup', value => { view = value; if (controller?.token || value.message === 'connected' || value.message === 'reopen') clearStep(sessionStore); });
+  }, location.pathname === '/auth/popup', value => { view = value; if (value.step === 'sites') storageMessage = ''; if (controller?.token || value.message === 'connected' || value.message === 'reopen') clearStep(sessionStore); });
   let expiresAt = pending?.expiresAt ?? 0;
   let expired = $state(!!pending && Date.now() >= pending.expiresAt);
   let storageMessage = $state('');
@@ -52,10 +52,18 @@
   }
   async function requestCode(resending = false) {
     if (view.busy) return;
-    await controller.send(email, locale, document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
-    if (view.message !== 'neutral' || view.sentAt === undefined) return;
+    const sentEmail = email.trim();
+    await controller.send(sentEmail, locale, document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+    if (view.message !== 'neutral' || view.sentAt === undefined) {
+      await tick();
+      if (resending) resendButton?.focus(); else emailInput?.focus();
+      return;
+    }
+    email = sentEmail;
     expiresAt = view.sentAt + 300000; expired = Date.now() >= expiresAt; code = '';
-    if (!saveStep(sessionStore, email.trim(), view.sentAt) && !warnedStorage) {
+    if (saveStep(sessionStore, sentEmail, view.sentAt)) {
+      storageMessage = '';
+    } else if (!warnedStorage) {
       storageMessage = text.noRestore; warnedStorage = true;
     }
     if (resending) controller.emit({ message: 'resent' });
@@ -102,14 +110,14 @@
     {#if view.step === 'ask'}
       <Card class="form-card"><form onsubmit={send}>
         <label for="email">{text.email}</label>
-        <input id="email" type="email" autocomplete="email" required bind:value={email} bind:this={emailInput} />
+        <input id="email" name="email" type="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="email" required bind:value={email} bind:this={emailInput} />
         <Button type="submit" size="cta" disabled={view.busy}>{view.busy && view.operation === 'send' ? text.requesting : text.send}</Button>
       </form></Card>
     {:else if view.step === 'enter'}
       <Card class="form-card"><form onsubmit={event => { event.preventDefault(); void verify(); }}>
         <label for="code">{text.code}</label>
-        <input id="code" inputmode="numeric" autocomplete="one-time-code" aria-describedby={fieldMessage ? "code-error" : undefined} aria-invalid={fieldMessage ? "true" : undefined} bind:value={code} bind:this={codeInput} />
-        <p id="code-error" role="status">{fieldMessage}</p>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" aria-describedby={fieldMessage ? "code-error" : undefined} aria-invalid={fieldMessage ? "true" : undefined} bind:value={code} bind:this={codeInput} />
+        <p id="code-error">{fieldMessage}</p>
         <Button id="sign-in" type="submit" size="cta" disabled={view.busy || expired}>{view.busy && view.operation === 'verify' ? text.checking : text.verify}</Button>
       </form></Card>
       <div class="step-actions"><button disabled={view.busy} bind:this={resendButton} onclick={() => requestCode(true)}>{view.busy && view.operation === 'send' ? text.requesting : text.resend}</button><button disabled={view.busy} onclick={back}>{text.change}</button></div>

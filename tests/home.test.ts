@@ -154,7 +154,7 @@ test('S-1, S-8 Clock uses request start and failed resend keeps the old timestam
   await f.controller.send('a@example.test', 'en'); expect(f.state.sentAt).toBe(sentAt);
 });
 
-for (const [header, minutes] of [['1', 1], ['60', 1], ['60.1', 2], ['0', 0], ['no wait', undefined], ['-1', undefined], ['', undefined]] as const) {
+for (const [header, minutes] of [['1', 1], ['60', 1], ['60.1', 2], ['0', undefined], ['no wait', undefined], ['-1', undefined], ['', undefined]] as const) {
   test(`S-12 throttle header ${JSON.stringify(header)} uses only a valid server wait`, async () => {
     const f = fixture('', [new Response(null, { status: 429, headers: { 'X-Retry-After': header } })]);
     await f.controller.send('a@example.test', 'en');

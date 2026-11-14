@@ -1,9 +1,54 @@
 import assert from 'node:assert/strict';
 import { test, expect } from 'bun:test';
 import tokens from '@yesid/tokens/tokens.json';
-import { passcodeEmail, emailLanguage, welcomeEmail } from '../src/email.ts';
+import { passcodeEmail, emailLanguage, welcomeEmail, emailChangedEmail, ownerNoticeEmail } from '../src/email.ts';
 
 const email = passcodeEmail('482915');
+
+for (const language of ['fr', 'en', 'es'] as const) {
+  test(`S-4: ${language} plain text code is a contiguous line without punctuation`, () => {
+    const message = passcodeEmail('048213', language);
+    expect(message.text.split('\n').filter(line => line.includes('048213'))).toEqual(['048213']);
+    expect(message.html).toContain('>048213</p>');
+    const instruction = { fr: 'Entrez ce code', en: 'Enter this code', es: 'Escribe este código' }[language];
+    expect(message.text).toContain(instruction);
+    expect(message.html).toContain(instruction);
+  });
+
+  test(`LOG-7: ${language} invitation names the site and explains first sign-in in both formats`, () => {
+    const message = welcomeEmail('Example', 'example', language);
+    expect(message.html.match(/<h1[^>]*>(.*?)<\/h1>/)?.[1]).toContain('Example');
+    const instructions = {
+      fr: ['cette adresse courriel', '6 chiffres', 'Aucun mot de passe', '7 jours'],
+      en: ['this email address', '6-digit', 'No password', '7 days'],
+      es: ['este correo', '6 dígitos', 'No necesitas contraseña', '7 días']
+    }[language];
+    for (const instruction of instructions) {
+      expect(message.text).toContain(instruction);
+      expect(message.html).toContain(instruction);
+    }
+    expect(message.html).toContain('href="https://login.yesid.dev/example/"');
+    for (const paragraph of message.html.matchAll(/<p[^>]*>(.*?)<\/p>/g)) {
+      if (paragraph[1].includes('yesid.') || paragraph[1] === 'login.yesid.dev') continue;
+      expect(message.text).toContain(paragraph[1]);
+    }
+  });
+
+  test(`LOG-7: ${language} account notice agrees across HTML and text`, () => {
+    const message = emailChangedEmail(language);
+    expect(message.html).toContain(`<html lang="${language}"`);
+    expect(message.html).toContain(`<title>${message.subject}</title>`);
+    expect(message.html).toContain(message.text.split('\n')[0]);
+  });
+}
+
+test('LOG-7: Owner notices remain French and describe address confirmation', () => {
+  const message = ownerNoticeEmail('person@example.test', 'Example', 'example');
+  expect(message.subject).toBe('Nouvelle personne sur votre site');
+  expect(message.html).toContain('<html lang="fr"');
+  expect(message.text).toContain('a confirmé son adresse');
+  expect(message.html).toContain(message.text.split('\n')[0]);
+});
 
 test('the code appears in the subject, the HTML and the plain text', () => {
   assert.match(email.subject, /482915/);

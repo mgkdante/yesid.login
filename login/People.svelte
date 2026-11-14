@@ -62,7 +62,7 @@
     {#if allowed || busy}<a href={'/' + slug + '/'}>{text.back}</a><Masthead kicker={siteLabel || "yesid. | login"} heading={text.title} lede={extra[0]} />{/if}
     {#if allowed}
       <div class="people-layout"><aside class="people-add"><Card class="form-card">{#if adding}<div role="group" aria-label={labels.confirm}><p>{labels.add}</p><p class="confirm-address">{email.trim()}?</p><Button size="cta" disabled={busy} onclick={() => change('POST')}>{labels.confirm}</Button> <Button size="cta" variant="outline" onclick={() => { adding = false; }}>{labels.back}</Button></div>{:else}<form onsubmit={event => { event.preventDefault(); adding = true; }}>
-        <label for="email">{common.email}</label><input id="email" type="email" autocomplete="off" required maxlength="254" bind:value={email} />
+        <label for="email">{common.email}</label><input id="email" name="email" type="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" required maxlength="254" bind:value={email} />
         <Button size="cta" type="submit" disabled={busy}>{text.add}</Button>
       </form>{/if}</Card><Button href={"/account?site=" + slug + "&lang=" + locale} variant="outline" size="cta">{labels.account}</Button><Button href={"/?site=" + slug + "&switch=1&lang=" + locale} variant="outline" size="cta">{common.switchSite}</Button></aside><section aria-label={text.title}><p class="label-station">{members.length} {extra[3]}</p>
       <ul class="people-list">

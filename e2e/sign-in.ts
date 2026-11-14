@@ -1,3 +1,5 @@
+import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
+import { legalDate } from '../login/legal/render.ts';
 import { exampleSiteSql } from '../scripts/example-fixture.ts';
 // A real sign-in in a real browser, against the real Worker and a local database: type a code, press the button, land in the editor.
 // Unit tests can't catch a page that refuses a valid code, so run this before deploying any login change: `bun run test:e2e`.
@@ -150,7 +152,7 @@ async function refusesAWrongCode(page: Page) {
   await requestCode(page, '?site=example&lang=en');
   await codeField(page).fill('000000');
   await page.locator('form button[type="submit"]').click();
-  await page.locator('[role="status"]').filter({ hasText: /That code did not work/i }).waitFor({ timeout: 10000 });
+  await page.locator('#code-error').filter({ hasText: /That code did not work/i }).waitFor({ timeout: 10000 });
   check('a wrong code is refused with a message', page.url().includes('/?'));
   const message = await page.locator('#code-error').innerText();
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -193,8 +195,14 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   });
   await page.goto(ORIGIN + '/?lang=en');
   await page.locator('#email').fill(OWNER);
+  sendStatus = 500;
+  await page.locator('form button[type="submit"]').click();
+  await page.getByRole('status').filter({ hasText: 'We could not process' }).waitFor();
+  check('S-2 failed send returns focus to Email', await page.locator('#email').evaluate(el => document.activeElement === el));
+  sendStatus = 200;
   await page.locator('form button[type="submit"]').click();
   await codeField(page).waitFor();
+  check('S-6 field feedback is described without a second live region', await page.locator('#code-error').getAttribute('role') === null && await page.locator('main [role="status"]').count() === 1);
   for (const pasted of ['123456', ' 123456', '123 456', '000123']) {
     await codeField(page).fill(pasted);
     await page.locator('#sign-in').click();
@@ -215,7 +223,7 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   sendStatus = 500;
   await page.getByRole('button', { name: 'Request another code', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'We could not process' }).waitFor();
-  check('S-8 failed resend keeps digits', await codeField(page).inputValue() === '000123');
+  check('S-8 failed resend keeps digits and restores recovery focus', await codeField(page).inputValue() === '000123' && await page.getByRole('button', { name: 'Request another code', exact: true }).evaluate(el => document.activeElement === el));
   sendStatus = 429;
   await page.getByRole('button', { name: 'Request another code', exact: true }).click();
   await page.getByRole('status').filter({ hasText: '2 minutes' }).waitFor();
@@ -256,6 +264,87 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   await blocked.close();
 }
 
+/** Review regressions: retain the sent address and clear warnings after recovery or Sites. */
+async function pendingStorageRecovery(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  for (const destination of ['save', 'sites']) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addInitScript(() => {
+      Reflect.set(window, 'blockPending', true);
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (this === sessionStorage && key === 'login.pending' && Reflect.get(window, 'blockPending')) throw new DOMException('Blocked', 'SecurityError');
+        return set.call(this, key, value);
+      };
+    });
+    const page = await context.newPage();
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/auth/api/email-otp/send-verification-otp', async route => { await gate; await route.fulfill({ json: {} }); });
+    await page.route('**/auth/api/sign-in/email-otp', route => route.fulfill({ json: {}, headers: { 'set-auth-token': 'test-only-token' } }));
+    await page.route('**/auth/sites', route => route.fulfill({ json: [] }));
+    await page.goto(ORIGIN + '/?lang=en');
+    await page.locator('#email').fill(OWNER); await page.locator('form button[type="submit"]').click();
+    await page.locator('#email').fill('edited@example.test'); release();
+    await codeField(page).waitFor();
+    await page.getByRole('status').filter({ hasText: 'This browser cannot keep' }).waitFor();
+    check('S-1 in-flight email edits cannot change the accepted recipient', (await page.locator('.lead').innerText()).includes(OWNER));
+    if (destination === 'save') {
+      await page.evaluate(() => Reflect.set(window, 'blockPending', false));
+      await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+      await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
+      check('S-1 successful save clears the storage warning and stores the sent address', !(await page.locator('main').innerText()).includes('This browser cannot keep') && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.pending')!).email) === OWNER);
+    } else {
+      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.locator('.sites').waitFor();
+      check('S-5 Sites clears the pending storage warning', !(await page.locator('main').innerText()).includes('This browser cannot keep'));
+    }
+    await context.close();
+  }
+}
+
+async function legalWithoutJavaScript(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  try {
+    const page = await context.newPage();
+    for (const [kind, pages] of Object.entries({ privacy, terms })) {
+      for (const lang of ['fr', 'en', 'es'] as const) {
+        await page.goto(`${ORIGIN}/legal/${kind}?lang=${lang}`);
+        const text = pages[lang];
+        check(`LOG-8: ${kind} ${lang} has its language without JS`, await page.locator('html').getAttribute('lang') === lang);
+        check(`LOG-8: ${kind} ${lang} has full text without JS`, (await page.locator('h1').innerText()) === text.title
+          && (await page.locator('.article-body').innerText()).includes(text.sections.at(-1)!.paragraphs![0]));
+        check(`LOG-8: ${kind} ${lang} date and back link`, await page.locator('time').getAttribute('datetime') === LEGAL_UPDATED
+          && await page.locator(`a[href="/?lang=${lang}"]`).count() === 1);
+        await page.screenshot({ path: resolve(SHOTS, `legal-nojs-${kind}-${lang}.png`), fullPage: true });
+        for (const section of text.sections) {
+          check(`LOG-8: ${kind} ${lang} section ${section.id}`, await page.locator(`#${section.id}`).count() === 1);
+        }
+        await page.locator('.legal-toc a').last().click();
+        check(`LOG-8: ${kind} ${lang} contents jump`, new URL(page.url()).hash === '#' + text.sections.at(-1)!.id);
+        await page.locator(`a[href="/?lang=${lang}"]`).click();
+        check(`LOG-8: ${kind} ${lang} back to sign-in`, new URL(page.url()).pathname === '/');
+      }
+    }
+  } finally { await context.close(); }
+}
+
+async function legalLanguageHash(page: Page) {
+  for (const kind of ['privacy', 'terms'] as const) {
+    const id = ({ privacy, terms })[kind].en.sections.at(-1)!.id;
+    for (const lang of ['fr', 'en', 'es']) {
+      await page.goto(`${ORIGIN}/legal/${kind}?lang=${lang}`);
+      await page.locator('[data-testid="footer"]').waitFor();
+      await page.locator(`.legal-toc a[href="#${id}"]`).click();
+      await page.locator(`[data-testid="language-toggle"][href$="#${id}"]`).waitFor();
+      const href = await page.locator('[data-testid="language-toggle"]').getAttribute('href');
+      check(`LOG-8: ${kind} ${lang} language link keeps fragment`, !!href && new URL(href, ORIGIN).hash === '#' + id);
+      await page.locator('[data-testid="language-toggle"]').click();
+      await page.locator('[data-testid="footer"]').waitFor();
+      check(`LOG-8: ${kind} language reload keeps section`, new URL(page.url()).hash === '#' + id
+        && await page.locator(`#${id}`).count() === 1);
+    }
+  }
+}
+
 async function navbarIsWhole(page: Page) {
   await page.evaluate(() => { for (const key of Object.keys(sessionStorage)) sessionStorage.removeItem(key); });
   await page.goto(`${ORIGIN}/?lang=fr`);
@@ -273,7 +362,7 @@ async function navbarIsWhole(page: Page) {
     check(`no construction props on /${path}`, await page.locator('.construction-ground').count() === 0);
   }
   await page.goto(`${ORIGIN}/legal/privacy?lang=en`); await page.locator('[data-testid="page-legal"]').waitFor();
-  check('legal pages follow the yesid.dev reading layout', await page.locator('h1').innerText() === 'Privacy Policy' && (await page.locator('[data-testid="legal-body"] h2').first().getAttribute('id')) === 'who-i-am' && await page.locator('.legal-toc').count() === 0 && (await page.locator('[data-testid="legal-body"]').innerText()).includes('Last updated: 2026-11-08'));
+  check('legal pages follow the yesid.dev reading layout', await page.locator('h1').innerText() === 'Privacy Policy' && (await page.locator('[data-testid="legal-body"] h2').first().getAttribute('id')) === 'who-i-am' && await page.locator('.legal-toc').count() === 1 && (await page.locator('[data-testid="legal-body"]').innerText()).includes('Last updated: ' + legalDate('en')));
   const moved = await fetch(`${ORIGIN}/privacy?lang=fr`, { redirect: 'manual' });
   check('the first legal addresses redirect', moved.status === 301 && moved.headers.get('location') === `${ORIGIN}/legal/privacy?lang=fr`);
   await page.goto(`${ORIGIN}/?lang=fr`); await page.locator('#email').waitFor();
@@ -338,7 +427,7 @@ async function expiresInBrowser(page: Page) {
   const stranger = await (await page.context().browser()!.newContext()).newPage();
   await requestCode(stranger, '?site=example&lang=en', 'expired@example.test');
   await codeField(stranger).fill(CODE); await stranger.locator('form button[type="submit"]').click();
-  await stranger.getByRole('status').filter({ hasText: /That code did not work/i }).waitFor();
+  await stranger.locator('#code-error').filter({ hasText: /That code did not work/i }).waitFor();
   await stranger.context().close();
 }
 
@@ -400,6 +489,19 @@ async function checkContrast(page: Page, name: string) {
 }
 async function capture(page: Page, name: string) {
   check('no horizontal scroll: ' + name, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  // LOG-1: presentation of S-3/S-4 and A-3/A-4/A-5 fields; their validation and proofs stay unchanged.
+  const inputs = await page.locator('main input:visible').evaluateAll(nodes => nodes.map(node => {
+    const input = node as HTMLInputElement;
+    return { id: input.id, size: parseFloat(getComputedStyle(input).fontSize), name: input.name, autocomplete: input.autocomplete,
+      capitalization: input.getAttribute('autocapitalize'), correction: input.getAttribute('autocorrect'), spelling: input.spellcheck };
+  }));
+  for (const input of inputs) {
+    check('input text 16 to 17 px: ' + name + ' ' + input.id, input.size >= 16 && input.size <= 17, String(input.size));
+    const purpose = input.id === 'code' ? 'one-time-code' : new URL(page.url()).pathname.endsWith('/people') ? 'off' : 'email';
+    check('native field purpose: ' + name + ' ' + input.id, input.name === input.id && input.autocomplete === purpose);
+    if (input.id === 'email') check('email editing stays literal: ' + name,
+      input.capitalization === 'none' && input.correction === 'off' && !input.spelling);
+  }
   await checkContrast(page,name);
   const file = name + '.png'; await page.screenshot({ path: resolve(SHOTS, file), fullPage: true }); captures.push(file);
 }
@@ -513,6 +615,9 @@ try {
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
   await forgivingCodeEntry(browser);
+  await pendingStorageRecovery(browser);
+  await legalWithoutJavaScript(browser);
+  await legalLanguageHash(page);
   await analyticsCounting(browser);
   await themeAtSendTime(page);
   await legalNavigation(page);

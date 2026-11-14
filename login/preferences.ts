@@ -23,8 +23,8 @@ export function savePreferences(locale: Locale, theme: string): void {
   } catch { /* Sign-in remains available when preference storage is blocked. */ }
 }
 
-export function localeHref(locale: string): string {
+export function localeHref(locale: string, hash = location.hash): string {
   const url = new URL(location.href);
   url.searchParams.set('lang', locale);
-  return url.pathname + url.search;
+  return url.pathname + url.search + (location.pathname.startsWith('/legal/') ? hash : '');
 }

@@ -321,6 +321,15 @@ test('legal shells work without a session, are indexable and retain script CSP',
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self';");
     expect(response.headers.get('Content-Security-Policy')).not.toContain('unsafe-eval');
   }
+  for (const kind of ['privacy', 'terms']) {
+    for (const lang of ['fr', 'en', 'es', 'invalid']) {
+      const response = await request(`/legal/${kind}?lang=${lang}`, undefined, false);
+      const html = await response.text();
+      expect(html).toContain(`<html lang="${lang === 'invalid' ? 'fr' : lang}"`);
+      expect(html).toContain('data-testid="legal-body"');
+      expect(response.headers.get('Content-Security-Policy')).toBe(LOGIN_HEADERS['Content-Security-Policy']);
+    }
+  }
   expect(await (await request('/')).text()).toContain('noindex');
   expect(await (await request('/legal/privacy',undefined,false)).text()).toContain('<title>Politique de confidentialité |');
   expect(await (await request('/legal/terms',undefined,false)).text()).toContain('<title>Conditions d’utilisation |');
