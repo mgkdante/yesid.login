@@ -45,7 +45,7 @@ test('code requests keep neutral copy, rate limiting and allowlisted language', 
 test('verify requires a token before choosing sites', async () => {
   const f = fixture('', [new Response(null, { status: 400 }), new Response(), new Response(null, { headers: { 'set-auth-token': 'fake' } }), Response.json([])]);
   await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('invalid');
-  await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('connection');
+  await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('checkError');
   await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('empty');
   expect(f.navigations).toEqual([]);
 });
@@ -73,7 +73,7 @@ test('network failures restore controls and expose only localized message keys',
   await f.controller.send('a@example.test', 'fr');
   expect(f.state.message).toBe('sendError'); expect(f.state.busy).toBe(false);
   await f.controller.verify('a@example.test', '123456');
-  expect(f.state.message).toBe('connection'); expect(f.state.busy).toBe(false);
+  expect(f.state.message).toBe('checkError'); expect(f.state.busy).toBe(false);
 });
 
 test('popup verify hands off the token without writing it to storage or a URL', async () => {
@@ -132,3 +132,32 @@ test('switching signs out only the selected site and asks for a fresh code', asy
   expect(f.calls.at(-1)?.url).toBe('/auth/api/sign-out');
   expect(f.navigations).toEqual(['/?switch=1']);
 });
+
+test('S-4, S-5 format refusal sends nothing; accepted separators preserve zeros', async () => {
+  const f = fixture('', [new Response(null, { status: 400 })]);
+  await f.controller.verify('a@example.test', 'Code: 000123');
+  expect(f.state.message).toBe('format'); expect(f.calls).toHaveLength(0);
+  await f.controller.verify('a@example.test', '000 123');
+  expect(JSON.parse(String(f.calls[0].init?.body)).otp).toBe('000123');
+});
+test('S-2, S-6, S-7, S-12 distinguish refusal, lost check and throttle without server detail', async () => {
+  const f = fixture('', [new Response('wrong', { status: 400 }), new Response('expired', { status: 400 }), new Response('exhausted', { status: 400 }), new Response(null, { status: 500 }), new Response(null, { status: 429, headers: { 'X-Retry-After': '61' } }), new Response(null, { status: 429 })]);
+  for (let i = 0; i < 3; i++) { await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('invalid'); }
+  await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('checkError');
+  await f.controller.verify('a@example.test', '123456'); expect(f.state.message).toBe('rate'); expect(f.state.retryMinutes).toBe(2);
+  await f.controller.send('a@example.test', 'en'); expect(f.state.retryMinutes).toBeUndefined();
+});
+test('S-1, S-8 Clock uses request start and failed resend keeps the old timestamp', async () => {
+  const f = fixture('', [new Response(), new Response(null, { status: 500 })]);
+  const before = Date.now(); await f.controller.send(' a@example.test ', 'en');
+  expect(f.state.sentAt).toBeGreaterThanOrEqual(before); const sentAt = f.state.sentAt;
+  await f.controller.send('a@example.test', 'en'); expect(f.state.sentAt).toBe(sentAt);
+});
+
+for (const [header, minutes] of [['1', 1], ['60', 1], ['60.1', 2], ['0', 0], ['no wait', undefined], ['-1', undefined], ['', undefined]] as const) {
+  test(`S-12 throttle header ${JSON.stringify(header)} uses only a valid server wait`, async () => {
+    const f = fixture('', [new Response(null, { status: 429, headers: { 'X-Retry-After': header } })]);
+    await f.controller.send('a@example.test', 'en');
+    expect(f.state.message).toBe('rate'); expect(f.state.retryMinutes).toBe(minutes);
+  });
+}

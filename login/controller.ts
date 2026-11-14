@@ -1,9 +1,10 @@
 import type { Locale, Message } from './copy.ts';
+import { normalizeCode } from './code.ts';
 
 export const USER_KEY = 'sveltia-cms.user';
 export const siteKey = (slug: string) => 'login.session.' + slug;
 type Site = { slug: string; label: string };
-export type State = { step: 'ask' | 'enter' | 'sites'; busy: boolean; message?: Message; sites: Site[] };
+export type State = { step: 'ask' | 'enter' | 'sites'; busy: boolean; operation?: 'send' | 'verify'; retryMinutes?: number; sentAt?: number; message?: Message; sites: Site[] };
 export interface Ports {
   fetch: typeof fetch;
   storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -69,38 +70,53 @@ class LoginController {
     this.emit({ busy: true });
     try { await work(); }
     catch (error) {
-      const known: Message[] = ['sitesError', 'sendError', 'invalid', 'connection'];
+      const known: Message[] = ['sitesError', 'sendError', 'invalid', 'connection', 'checkError'];
       this.emit({ message: error instanceof Error && known.includes(error.message as Message) ? error.message as Message : fallback });
     } finally { this.emit({ busy: false }); }
   }
   restore() {
     return this.attempt(async () => {
       if (this.popup) return;
-      this.ports.storage.removeItem(USER_KEY);
+      try { this.ports.storage.removeItem(USER_KEY); } catch { /* Optional for sign-in. */ }
       if (!validTarget(this.requested)) {
         if (new URLSearchParams(this.ports.search).has('switch')) this.emit({message:'switchNotice'});
         return;
       }
-      const stored = JSON.parse(this.ports.storage.getItem(siteKey(this.requested)) || 'null');
+      let stored;
+      try { stored = JSON.parse(this.ports.storage.getItem(siteKey(this.requested)) || 'null'); } catch { return; }
       if (typeof stored?.token === 'string' && stored.token) await this.choose(stored.token);
     }, 'unavailable');
   }
   send(email: string, locale: Locale, theme = 'dark') {
+    if (this.state.busy) return Promise.resolve();
+    this.emit({ operation: 'send', message: undefined, retryMinutes: undefined });
     return this.attempt(async () => {
+      const sentAt = Date.now();
       const response = await this.post('/email-otp/send-verification-otp', { email: email.trim(), type: 'sign-in' }, locale, theme);
-      if (response.status === 429) { this.emit({ message: 'rate' }); return; }
+      if (response.status === 429) { this.throttle(response); return; }
       if (!response.ok) throw Error('sendError');
-      this.emit({ step: 'enter', message: 'neutral' });
+      this.emit({ step: 'enter', message: 'neutral', sentAt });
     }, 'sendError');
   }
   verify(email: string, code: string) {
+    if (this.state.busy) return Promise.resolve();
+    const normalized = normalizeCode(code);
+    if (normalized === undefined) { this.emit({ message: 'format' }); return Promise.resolve(); }
+    this.emit({ operation: 'verify', message: undefined, retryMinutes: undefined });
     return this.attempt(async () => {
-      const response = await this.post('/sign-in/email-otp', { email: email.trim(), otp: code.trim() });
-      if (!response.ok) throw Error('invalid');
+      const response = await this.post('/sign-in/email-otp', { email: email.trim(), otp: normalized });
+      if (response.status === 429) { this.throttle(response); return; }
+      if (response.status === 400) throw Error('invalid');
+      if (!response.ok) throw Error('checkError');
       const value = response.headers.get('set-auth-token');
-      if (!value) throw Error('connection');
+      if (!value) throw Error('checkError');
       await this.choose(value);
-    }, 'connection');
+    }, 'checkError');
+  }
+  throttle(response: Response) {
+    const header = response.headers.get('X-Retry-After');
+    const seconds = Number(header);
+    this.emit({ message: 'rate', retryMinutes: header !== null && header.trim() !== '' && Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds / 60) : undefined });
   }
 }
 
