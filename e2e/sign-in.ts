@@ -1,4 +1,6 @@
 import { accountNavigation } from './account-navigation.ts';
+import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
+import { legalDate } from '../login/legal/render.ts';
 import { exampleSiteSql } from '../scripts/example-fixture.ts';
 // A real sign-in in a real browser, against the real Worker and a local database: type a code, press the button, land in the editor.
 // Unit tests can't catch a page that refuses a valid code, so run this before deploying any login change: `bun run test:e2e`.
@@ -164,6 +166,50 @@ async function keepsItsPlaceWhenLanguageChanges(page: Page) {
   check('changing language keeps step two', lang === 'es');
 }
 
+async function legalWithoutJavaScript(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  try {
+    const page = await context.newPage();
+    for (const [kind, pages] of Object.entries({ privacy, terms })) {
+      for (const lang of ['fr', 'en', 'es'] as const) {
+        await page.goto(`${ORIGIN}/legal/${kind}?lang=${lang}`);
+        const text = pages[lang];
+        check(`LOG-8: ${kind} ${lang} has its language without JS`, await page.locator('html').getAttribute('lang') === lang);
+        check(`LOG-8: ${kind} ${lang} has full text without JS`, (await page.locator('h1').innerText()) === text.title
+          && (await page.locator('.article-body').innerText()).includes(text.sections.at(-1)!.paragraphs![0]));
+        check(`LOG-8: ${kind} ${lang} date and back link`, await page.locator('time').getAttribute('datetime') === LEGAL_UPDATED
+          && await page.locator(`a[href="/?lang=${lang}"]`).count() === 1);
+        await page.screenshot({ path: resolve(SHOTS, `legal-nojs-${kind}-${lang}.png`), fullPage: true });
+        for (const section of text.sections) {
+          check(`LOG-8: ${kind} ${lang} section ${section.id}`, await page.locator(`#${section.id}`).count() === 1);
+        }
+        await page.locator('.legal-toc a').last().click();
+        check(`LOG-8: ${kind} ${lang} contents jump`, new URL(page.url()).hash === '#' + text.sections.at(-1)!.id);
+        await page.locator(`a[href="/?lang=${lang}"]`).click();
+        check(`LOG-8: ${kind} ${lang} back to sign-in`, new URL(page.url()).pathname === '/');
+      }
+    }
+  } finally { await context.close(); }
+}
+
+async function legalLanguageHash(page: Page) {
+  for (const kind of ['privacy', 'terms'] as const) {
+    const id = ({ privacy, terms })[kind].en.sections.at(-1)!.id;
+    for (const lang of ['fr', 'en', 'es']) {
+      await page.goto(`${ORIGIN}/legal/${kind}?lang=${lang}`);
+      await page.locator('[data-testid="footer"]').waitFor();
+      await page.locator(`.legal-toc a[href="#${id}"]`).click();
+      await page.locator(`[data-testid="language-toggle"][href$="#${id}"]`).waitFor();
+      const href = await page.locator('[data-testid="language-toggle"]').getAttribute('href');
+      check(`LOG-8: ${kind} ${lang} language link keeps fragment`, !!href && new URL(href, ORIGIN).hash === '#' + id);
+      await page.locator('[data-testid="language-toggle"]').click();
+      await page.locator('[data-testid="footer"]').waitFor();
+      check(`LOG-8: ${kind} language reload keeps section`, new URL(page.url()).hash === '#' + id
+        && await page.locator(`#${id}`).count() === 1);
+    }
+  }
+}
+
 async function navbarIsWhole(page: Page) {
   await page.evaluate(() => { for (const key of Object.keys(sessionStorage)) sessionStorage.removeItem(key); });
   await page.goto(`${ORIGIN}/?lang=fr`);
@@ -181,7 +227,7 @@ async function navbarIsWhole(page: Page) {
     check(`no construction props on /${path}`, await page.locator('.construction-ground').count() === 0);
   }
   await page.goto(`${ORIGIN}/legal/privacy?lang=en`); await page.locator('[data-testid="page-legal"]').waitFor();
-  check('legal pages follow the yesid.dev reading layout', await page.locator('h1').innerText() === 'Privacy Policy' && (await page.locator('[data-testid="legal-body"] h2').first().getAttribute('id')) === 'who-i-am' && await page.locator('.legal-toc').count() === 0 && (await page.locator('[data-testid="legal-body"]').innerText()).includes('Last updated: 2026-11-08'));
+  check('legal pages follow the yesid.dev reading layout', await page.locator('h1').innerText() === 'Privacy Policy' && (await page.locator('[data-testid="legal-body"] h2').first().getAttribute('id')) === 'who-i-am' && await page.locator('.legal-toc').count() === 1 && (await page.locator('[data-testid="legal-body"]').innerText()).includes('Last updated: ' + legalDate('en')));
   const moved = await fetch(`${ORIGIN}/privacy?lang=fr`, { redirect: 'manual' });
   check('the first legal addresses redirect', moved.status === 301 && moved.headers.get('location') === `${ORIGIN}/legal/privacy?lang=fr`);
   await page.goto(`${ORIGIN}/?lang=fr`); await page.locator('#email').waitFor();
@@ -308,6 +354,19 @@ async function checkContrast(page: Page, name: string) {
 }
 async function capture(page: Page, name: string) {
   check('no horizontal scroll: ' + name, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  // LOG-1: presentation of S-3/S-4 and A-3/A-4/A-5 fields; their validation and proofs stay unchanged.
+  const inputs = await page.locator('main input:visible').evaluateAll(nodes => nodes.map(node => {
+    const input = node as HTMLInputElement;
+    return { id: input.id, size: parseFloat(getComputedStyle(input).fontSize), name: input.name, autocomplete: input.autocomplete,
+      capitalization: input.getAttribute('autocapitalize'), correction: input.getAttribute('autocorrect'), spelling: input.spellcheck };
+  }));
+  for (const input of inputs) {
+    check('input text 16 to 17 px: ' + name + ' ' + input.id, input.size >= 16 && input.size <= 17, String(input.size));
+    const purpose = input.id === 'code' ? 'one-time-code' : new URL(page.url()).pathname.endsWith('/people') ? 'off' : 'email';
+    check('native field purpose: ' + name + ' ' + input.id, input.name === input.id && input.autocomplete === purpose);
+    if (input.id === 'email') check('email editing stays literal: ' + name,
+      input.capitalization === 'none' && input.correction === 'off' && !input.spelling);
+  }
   await checkContrast(page,name);
   const file = name + '.png'; await page.screenshot({ path: resolve(SHOTS, file), fullPage: true }); captures.push(file);
 }
@@ -420,6 +479,8 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
+  await legalWithoutJavaScript(browser);
+  await legalLanguageHash(page);
   await analyticsCounting(browser);
   await themeAtSendTime(page);
   await legalNavigation(page);
