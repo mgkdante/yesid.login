@@ -26,6 +26,7 @@
   let code = $state('');
   let codeAttempt = $state(0);
   let view = $state<State>({ step: 'ask', busy: false, sites: [] });
+  let messageElement = $state<HTMLParagraphElement>();
   let heading = $state<HTMLHeadingElement>();
   let codeInput = $state<HTMLInputElement>();
   const controller = createController({
@@ -38,7 +39,9 @@
   }, location.pathname === '/auth/popup', value => {
     const changed = view.step !== value.step || view.switching !== value.switching || view.empty !== value.empty || (view.message === 'connected') !== (value.message === 'connected');
     view = value;
-    if (changed && value.step !== 'enter') void tick().then(() => heading?.focus());
+    if (changed && value.step !== 'enter' && value.step !== 'loadingSites') {
+      void tick().then(() => value.step === 'sitesFailure' ? messageElement?.focus() : heading?.focus());
+    }
     if (value.step === 'sites' || value.step === 'loadingSites') storageMessage = '';
     if (controller?.token || value.message === 'connected' || value.message === 'reopen') clearStep(sessionStore);
   });
@@ -158,6 +161,6 @@
       {#if view.message === 'sitesError'}<Button disabled={view.busy} onclick={() => controller.retrySites()}>{text.retry}</Button>{/if}
       {#if view.empty}<Button disabled={view.busy} onclick={() => controller.switchSite()}>{text.signOut}</Button>{/if}
     {/if}
-    <p class="message" role="status">{view.step === 'sites' && (view.message === 'switchNotice' || view.message === 'editorStorage') ? '' : statusMessage} {storageMessage}</p>
+    <p id="sign-in-message" class="message" role="status" tabindex="-1" bind:this={messageElement}>{view.step === 'sites' && (view.message === 'switchNotice' || view.message === 'editorStorage') ? '' : statusMessage} {storageMessage}</p>
   </main>
 </Chrome>

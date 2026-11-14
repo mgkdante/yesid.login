@@ -49,13 +49,13 @@ class LoginController {
   async openRow(slug: string) {
     this.emit({ busy: true, opening: slug, openError: undefined, message: undefined });
     try { await this.navigate(slug); }
-    catch (error) { this.emit({ step: 'sites', openError: slug, message: error instanceof Error && error.message === 'editorStorage' ? 'editorStorage' : undefined }); }
-    finally { this.emit({ busy: false, opening: undefined }); }
+    catch (error) { this.emit({ step: 'sites', opening: undefined, openError: slug, message: error instanceof Error && error.message === 'editorStorage' ? 'editorStorage' : undefined }); }
+    finally { this.emit({ busy: false }); }
   }
   sessionEnded() {
     try { this.ports.storage.removeItem(siteKey(this.requested)); } catch { /* Server session has ended. */ }
     this.token = ''; this.dispose();
-    this.emit({ step: 'ask', sites: [], switching: false, message: 'sessionEnded', openError: undefined });
+    this.emit({ step: 'ask', sites: [], switching: false, message: 'sessionEnded', opening: undefined, openError: undefined });
   }
   retrySites() { return this.attempt(() => this.choose(this.token), 'sitesError'); }
   retryHandover() { this.handoff?.retry(); }

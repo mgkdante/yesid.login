@@ -28,6 +28,8 @@ export async function sitesHandoff(browser: Browser, origin: string, check: (nam
     check(`S-16 ${lang} empty replaces card and chooser`, await page.locator('.form-card').count() === 0 && await page.getByRole('button', { name: text.signOut, exact: true }).count() === 1);
     siteStatus = 503; await signIn(page);
     await page.getByRole('button', { name: text.retry, exact: true }).waitFor();
+    await page.waitForFunction(() => document.activeElement?.id === 'sign-in-message');
+    check(`S-13 ${lang} list failure focuses its message`, await page.getByRole('status').filter({ hasText: text.sitesError }).evaluate(el => el === document.activeElement));
     check(`S-13 ${lang} list failure has no chooser heading`, await page.getByRole('heading', { level: 1 }).count() === 0);
     sites = [{ slug: 'example', label: 'Example' }, { slug: 'choice', label: 'Choice' }]; siteStatus = 200;
     await page.getByRole('button', { name: text.retry, exact: true }).click();
@@ -71,24 +73,22 @@ export async function sitesHandoff(browser: Browser, origin: string, check: (nam
         await page.waitForFunction(() => Reflect.get(window, 'received').includes('authorizing:github'));
         check(`H-5 ${lang} ${mode} no token before acknowledgement`, (await page.evaluate(() => Reflect.get(window, 'received'))).length === 1);
         if (mode === 'reply') {
-          for (const attackerOrigin of [origin]) {
-            const opened = context.waitForEvent('page');
-            await page.evaluate(url => { window.open(url, 'foreign-sender'); }, attackerOrigin + '/handoff-test');
-            const foreign = await opened; await foreign.waitForLoadState();
-            await popup.evaluate(() => {
-              Reflect.set(window, 'foreignAckDelivered', false);
-              const observe = (event: MessageEvent) => {
-                if (event.data !== 'authorizing:github') return;
-                window.removeEventListener('message', observe);
-                Reflect.set(window, 'foreignAckDelivered', true);
-              };
-              window.addEventListener('message', observe);
-            });
-            await foreign.evaluate(targetOrigin => { window.open('', 'handoff')!.postMessage('authorizing:github', targetOrigin); }, origin);
-            await popup.waitForFunction(() => Reflect.get(window, 'foreignAckDelivered') === true);
-            check(`H-5 ${lang} rejects foreign window from ${attackerOrigin}`, await popup.getByRole('status').filter({ hasText: text.openingEditor }).count() === 1 && (await page.evaluate(() => Reflect.get(window, 'received'))).length === 1);
-            await foreign.close();
-          }
+          const opened = context.waitForEvent('page');
+          await page.evaluate(url => { window.open(url, 'foreign-sender'); }, origin + '/handoff-test');
+          const foreign = await opened; await foreign.waitForLoadState();
+          await popup.evaluate(() => {
+            Reflect.set(window, 'foreignAckDelivered', false);
+            const observe = (event: MessageEvent) => {
+              if (event.data !== 'authorizing:github') return;
+              window.removeEventListener('message', observe);
+              Reflect.set(window, 'foreignAckDelivered', true);
+            };
+            window.addEventListener('message', observe);
+          });
+          await foreign.evaluate(targetOrigin => { window.open('', 'handoff')!.postMessage('authorizing:github', targetOrigin); }, origin);
+          await popup.waitForFunction(() => Reflect.get(window, 'foreignAckDelivered') === true);
+          check(`H-5 ${lang} rejects foreign window from ${origin}`, await popup.getByRole('status').filter({ hasText: text.openingEditor }).count() === 1 && (await page.evaluate(() => Reflect.get(window, 'received'))).length === 1);
+          await foreign.close();
         }
         if (mode === 'close') { await page.close(); await popup.getByText(text.reopen, { exact: true }).waitFor({ timeout: 15000 }); }
         else if (mode === 'abandon') { await popup.goto(origin + '/?lang=' + lang); await popup.locator('#email').waitFor(); }

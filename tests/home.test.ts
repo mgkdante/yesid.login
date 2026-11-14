@@ -280,3 +280,16 @@ for (const ending of ['success', 'abandon', 'cached'] as const) test(`H-5 H-7 ti
     expect(messages).not.toContain('handoverFailed');
   } finally { jest.useRealTimers(); }
 });
+
+
+test('H-1 H-2 direct navigation retains the selected site opening status until page leave', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response()]);
+  await f.controller.choose('fake');
+  expect(f.navigations).toEqual(['/a/']); expect(f.state.opening).toBe('a');
+});
+
+test('H-1 bind 401 clears the selected site opening state', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response(null,{status:401})]);
+  await f.controller.choose('fake');
+  expect(f.state.step).toBe('ask'); expect(f.state.opening).toBeUndefined();
+});

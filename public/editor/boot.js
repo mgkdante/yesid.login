@@ -11,7 +11,7 @@
   document.documentElement.lang = ['fr', 'en', 'es'].includes(language) ? language : 'fr';
   const panel = document.createElement('main'); panel.id = 'editor-start';
   const brand = document.createElement('p'); brand.className = 'editor-station'; brand.textContent = 'yesid. | login';
-  const title = document.createElement('h1');
+  const title = document.createElement('h1'); title.textContent = words[0];
   const status = document.createElement('p'); status.setAttribute('role', 'status'); status.className = 'editor-status';
   const retry = document.createElement('button'); retry.textContent = words[2]; retry.onclick = () => location.reload(); retry.hidden = true;
   const help = document.createElement('a'); help.href = 'https://yesid.dev/contact'; help.textContent = words[6]; help.hidden = true;
@@ -27,7 +27,7 @@
     retry.hidden = !failed; help.hidden = !failed;
   }
   // Establish the empty live region before the first announcement.
-  requestAnimationFrame(() => showState());
+  requestAnimationFrame(() => { if (status.textContent !== title.textContent) status.textContent = title.textContent; });
   const slug = location.pathname.split('/')[1];
   const KEY = 'login.session.' + slug;
   const legacy = 'sveltia-cms.user';
