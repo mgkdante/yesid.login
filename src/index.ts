@@ -95,7 +95,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, lookup: 
   const authResponse = await authRoute(request,env,ctx,lookup);
   if (authResponse) return withoutSetCookie(authResponse);
   const url = new URL(request.url), path = url.pathname;
-  if (path === '/legal/privacy' || path === '/legal/terms') return page(publicHtml(path === '/legal/privacy' ? 'privacy' : 'terms'), 'text/html; charset=utf-8', LOGIN_HEADERS);
+  if (path === '/legal/privacy' || path === '/legal/terms') return page(publicHtml(path === '/legal/privacy' ? 'privacy' : 'terms', url.searchParams.get('lang')), 'text/html; charset=utf-8', LOGIN_HEADERS);
   if (path === ANALYTICS_ENDPOINT) return relayAnalytics(request);
   // The first published addresses, in case they were shared.
   if (path === '/privacy' || path === '/terms') return Response.redirect(`${url.origin}/legal${path}${url.search}`, 301);
