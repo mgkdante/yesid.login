@@ -629,10 +629,10 @@ async function accountCorrectness(browser: import('playwright-core').Browser) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
     await context.addInitScript(() => localStorage.setItem('login.session.example', JSON.stringify({ token: 'account-test' })));
     const page = await context.newPage();
-    let restoreStatus = 503, status = 500, waitHeader = true, calls = 0, lastOtp = '', malformed = false, lost = false;
+    let restoreStatus = 503, accessStatus = 200, status = 500, waitHeader = true, calls = 0, lastOtp = '', malformed = false, lost = false;
     await page.route('**/auth/api/get-session', route => route.fulfill({ status: restoreStatus, json: { session: {}, user: { id: 'account-user', email: 'current@example.test' } } }));
     await page.route('**/account', route => route.request().headers().authorization
-      ? route.fulfill({ json: {} }) : route.continue());
+      ? route.fulfill({ status: accessStatus, json: {} }) : route.continue());
     await page.route('**/auth/sites', route => route.fulfill({ json: [{ slug: 'example' }] }));
     await page.route('**/auth/api/email-otp/*', route => {
       calls++; lastOtp = route.request().postDataJSON().otp || '';
@@ -651,9 +651,16 @@ async function accountCorrectness(browser: import('playwright-core').Browser) {
     check(`A-8 address survives language reload ${lang}`, await page.locator('#email').inputValue() === 'new@example.test');
     await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await page.locator('#email:enabled').waitFor();
     await submit(); await page.getByRole('status').filter({ hasText: /current address|adresse actuelle|dirección actual/ }).waitFor();
-    check(`A-2 failure before code names sending ${lang}`, await page.getByRole('alert').count() === 0 && await page.locator('#email').inputValue() === 'new@example.test');
+    check(`A-2 failure before code names sending ${lang}`, await page.getByRole('alert').count() === 0 && await page.locator('#email').inputValue() === 'new@example.test' && await page.locator('#email').evaluate(el => document.activeElement === el));
+    for (const failure of ['malformed', 'lost']) {
+      status = 200; malformed = failure === 'malformed'; lost = failure === 'lost'; await submit();
+      await page.getByRole('status').filter({ hasText: /current address|adresse actuelle|dirección actual/ }).waitFor();
+      check(`A-2 address ${failure} reply restores focus ${lang}`, await page.locator('#email').evaluate(el => document.activeElement === el));
+    }
+    malformed = false; lost = false;
     status = 429; await submit(); await page.getByRole('status').filter({ hasText: /2 minutes|2 minutos/ }).waitFor();
-    check(`A-2 S-12 authoritative wait ${lang}`, true);
+    const expectedWait = { en: 'Too many requests. Try again in 2 minutes.', fr: 'Trop de demandes. Réessayez dans 2 minutes.', es: 'Demasiadas solicitudes. Inténtalo en 2 minutos.' }[lang];
+    check(`A-2 S-12 authoritative wait and email focus ${lang}`, await page.locator('.message').innerText() === expectedWait && await page.locator('#email').evaluate(el => document.activeElement === el));
     waitHeader = false; await submit();
     await page.getByRole('status').filter({ hasText: /later|plus tard|más tarde/ }).waitFor();
     status = 200; await submit(); await codeField(page).waitFor();
@@ -661,24 +668,33 @@ async function accountCorrectness(browser: import('playwright-core').Browser) {
     for (const stage of ['current', 'new']) {
       await page.reload(); await codeField(page).waitFor();
       check(`A-8 ${stage} restores empty code ${lang}`, await codeField(page).inputValue() === '');
+      await codeField(page).fill('123456');
+      const otherLang = lang === 'en' ? 'fr' : 'en';
+      await page.goto(`${ORIGIN}/account?site=example&lang=${otherLang}`); await codeField(page).waitFor();
+      check(`A-8 ${stage} language change restores stage without code ${lang}`, await codeField(page).inputValue() === '' && await page.locator('html').getAttribute('lang') === otherLang && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.account.example')!).stage) === stage && (await page.locator('main').innerText()).includes('new@example.test'));
+      await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await codeField(page).waitFor();
+      status = 429; await codeField(page).fill('123456'); waitHeader = true; await submit();
+      await page.getByRole('status').filter({ hasText: expectedWait }).waitFor();
+      check(`A-2 ${stage} throttle restores focus ${lang}`, await codeField(page).evaluate(el => document.activeElement === el));
       status = 400;
-      for (const value of ['123456', ' 123456', '123 456', '000123', '123-456', '123–456', '123\t456', '123\u00a0456', '123\u200b456']) {
+      for (const value of ['123456', ' 123456', '123456 ', '123 456', '000123', '123-456', '123–456', '123\t456', '123\u00a0456', '123\u200b456']) {
         const before = calls; await codeField(page).fill(value); await submit(); await page.locator('#code-error').waitFor();
         check(`A-4/A-5 ${stage} paste intact ${lang}`, calls === before + 1 && lastOtp === value.replace(/[ \t\u00a0\u200b\-\u2013]/g, '') && await page.getByRole('alert').count() === 1 && await codeField(page).evaluate((el: HTMLInputElement) => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length));
       }
-      for (const value of ['12345', '1234567', 'code:123456', '１２３４５６', '123.456']) {
+      for (const value of ['12345', '1234567', '12a456', 'code:123456', '１２３４５６', '123.456', '123456.']) {
         const before = calls; await codeField(page).fill(value); await submit(); await page.locator('#code-error').waitFor();
         check(`A-4/A-5 ${stage} rejects prose/invalid format ${lang}`, calls === before && await codeField(page).getAttribute('aria-invalid') === 'true');
       }
       await codeField(page).fill('123456'); status = 500; await submit();
       await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
-      check(`A-2 ${stage} server failure retains code ${lang}`, await codeField(page).inputValue() === '123456');
+      check(`A-2 ${stage} server failure retains code ${lang}`, await codeField(page).inputValue() === '123456' && await codeField(page).evaluate(el => document.activeElement === el));
       status = 200; malformed = true; await submit();
       await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      check(`A-2 ${stage} malformed reply restores focus ${lang}`, await codeField(page).evaluate(el => document.activeElement === el));
       malformed = false; lost = true; await submit();
       await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
       lost = false;
-      check(`A-2 ${stage} lost response retains code ${lang}`, await codeField(page).inputValue() === '123456');
+      check(`A-2 ${stage} lost response retains code and focus ${lang}`, await codeField(page).inputValue() === '123456' && await codeField(page).evaluate(el => document.activeElement === el));
       await page.screenshot({ path: resolve(SHOTS, `log-5-${lang}-${stage}-390.png`) });
       if (stage === 'current') { await submit(); await page.getByRole('status').filter({ hasText: /If this address|Si cette adresse|Si esta dirección/ }).waitFor(); }
     }
@@ -692,6 +708,9 @@ async function accountCorrectness(browser: import('playwright-core').Browser) {
     await page.locator('#email').fill('new@example.test'); status = 401; await submit();
     await page.waitForURL(`${ORIGIN}/?site=example`);
     check(`A-9 401 clears account context ${lang}`, await page.evaluate(() => sessionStorage.getItem('login.account.example')) === null);
+    accessStatus = 403;
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await page.waitForURL(`${ORIGIN}/?site=example`);
+    check(`A-1 forbidden Account access returns to sign-in ${lang}`, await retry.count() === 0);
     await context.close();
   }
 }

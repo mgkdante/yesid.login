@@ -4,7 +4,7 @@
   import { Button } from '@yesid/ui/button';
   import { Card } from '@yesid/ui/card';
   import Chrome from './Chrome.svelte';
-  import { copy, accountCopy } from './copy.ts';
+  import { copy, accountCopy, throttleMessage } from './copy.ts';
   import { initialLocale } from './preferences.ts';
   import { siteKey, validTarget, retryMinutes } from './controller.ts';
   import { normalizeCode } from './code.ts';
@@ -16,7 +16,7 @@
   const steps = { fr: ['Nouvelle adresse', 'Code à l’adresse actuelle', 'Code à la nouvelle adresse'], en: ['New address', 'Code to current address', 'Code to new address'], es: ['Nueva dirección', 'Código a la dirección actual', 'Código a la nueva dirección'] }[locale];
   let token = '', userId = '';
   let restored = $state(false), restoreFailed = $state(false), fieldMessage = $state(''), codeAttempt = $state(0), storageWarning = $state(false);
-  let codeInput = $state<HTMLInputElement>();
+  let emailInput = $state<HTMLInputElement>(), codeInput = $state<HTMLInputElement>();
   const headers = () => ({ Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', 'X-Login-Language': locale, 'X-Login-Theme': document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light' });
   function clearRecord() { try { clearAccount(sessionStorage, slug); } catch { /* Storage itself may be blocked. */ } }
   function signIn() { clearRecord(); location.replace(validTarget(slug) ? '/?site=' + encodeURIComponent(slug) : '/'); }
@@ -34,13 +34,9 @@
     } catch { /* Storage is optional. */ }
   }
   onMount(() => { void restore(); });
-  function throttleMessage(response: Response) {
-    const minutes = retryMinutes(response);
-    return minutes === undefined ? common.rate : (minutes === 1 ? common.rateOne : common.rateMany).replace('{n}', String(minutes));
-  }
   function restoreResponse(response: Response): boolean {
-    if (response.status === 401) { signIn(); return false; }
-    if (response.status === 429) { restoreFailed = true; message = text.loadFailed + ' ' + throttleMessage(response); return false; }
+    if (response.status === 401 || response.status === 403) { signIn(); return false; }
+    if (response.status === 429) { restoreFailed = true; message = text.loadFailed + ' ' + throttleMessage(locale, retryMinutes(response)); return false; }
     if (!response.ok) throw Error();
     return true;
   }
@@ -85,7 +81,7 @@
       });
       if (response.status === 401) { signIn(); return; }
       if (response.status === 429) {
-        message = throttleMessage(response); return;
+        message = throttleMessage(locale, retryMinutes(response)); return;
       }
       if (response.status === 400 && step !== 'ask') { await codeError(common.invalid); return; }
       if (!response.ok) throw Error();
@@ -94,15 +90,19 @@
       if (step === 'ask' || step === 'current') {
         email = email.trim(); step = step === 'ask' ? 'current' : 'enter'; code = '';
         retain(step === 'current' ? 'current' : 'new', sentAt);
-        message = step === 'current' ? text.sentCurrent : text.sent; busy = false;
-        await tick(); codeInput?.focus();
+        message = step === 'current' ? text.sentCurrent : text.sent;
       } else {
         step = 'done'; code = ''; clearRecord();
         try { localStorage.removeItem(siteKey(slug)); } catch { /* All sessions are already closed. */ }
         message = text.done;
       }
     } catch { message = operationFailure(); }
-    finally { busy = false; }
+    finally {
+      busy = false;
+      await tick();
+      if (step === 'ask') emailInput?.focus();
+      else if (step !== 'done') codeInput?.focus();
+    }
   }
 </script>
 <svelte:head><title>{text.title} | yesid.dev</title></svelte:head>
@@ -112,7 +112,7 @@
     <p class="label-station">{step === 'ask' ? '1 / 3' : step === 'current' ? '2 / 3' : '3 / 3'} · {steps[step === 'ask' ? 0 : step === 'current' ? 1 : 2]}</p>
     {#if step !== 'done'}
       <Card class="form-card"><form onsubmit={event => { event.preventDefault(); void submit(); }}>
-        {#if step === 'ask'}<label for="email">{common.email}</label><input id="email" name="email" type="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="email" disabled={busy || !restored} required bind:value={email} oninput={event => { email = event.currentTarget.value; if (restored) retain('address'); }} />
+        {#if step === 'ask'}<label for="email">{common.email}</label><input id="email" name="email" type="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="email" disabled={busy || !restored} required bind:this={emailInput} bind:value={email} oninput={event => { email = event.currentTarget.value; if (restored) retain('address'); }} />
         {:else}
           <p class="confirm-address">{text.current} {currentEmail}</p>
           <p class="confirm-address">{text.next} {email}</p>

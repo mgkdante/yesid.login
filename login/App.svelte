@@ -4,7 +4,7 @@
   import Chrome from './Chrome.svelte';
   import { readStep, saveStep, clearStep } from './step.ts';
   import { Button } from '@yesid/ui/button';
-  import { copy } from './copy.ts';
+  import { copy, throttleMessage } from './copy.ts';
   import { createController, popupHandover, type State } from './controller.ts';
   import { initialLocale } from './preferences.ts';
 
@@ -42,8 +42,8 @@
   let emailInput = $state<HTMLInputElement>();
   let resendButton = $state<HTMLButtonElement>();
   const fieldMessage = $derived(expired ? text.expired : view.message === 'format' || view.message === 'invalid' ? text[view.message] : '');
-  const statusMessage = $derived(view.message === 'rate' && view.retryMinutes !== undefined
-    ? (view.retryMinutes === 1 ? text.rateOne : text.rateMany).replace('{n}', String(view.retryMinutes))
+  const statusMessage = $derived(view.message === 'rate'
+    ? throttleMessage(locale, view.retryMinutes)
     : view.message && !['neutral', 'format', 'invalid'].includes(view.message) ? text[view.message] : '');
   async function back() {
     if (view.busy) return;
