@@ -48,7 +48,9 @@ export async function log10Focus(page: Page, action: Locator, name: string, chec
   });
   check(`LOG-10 filled action ${name}`, !/rgba\(0, 0, 0, 0\)|transparent/.test(ring.fill), ring.fill);
   check(`LOG-10 visible outline ${name}`, ring.style !== 'none' && ring.style !== 'hidden' && ring.width >= 2, JSON.stringify(ring));
-  if (ring.reliable && ring.offset >= 0) check(`LOG-10 outline contrast at least 3:1 ${name}`, ring.ratio >= 3, JSON.stringify(ring));
+  // Fail closed: an unmeasurable ring (background image behind it, or an inset outline) must be looked at, never skipped.
+  check(`LOG-10 outline contrast measurable ${name}`, ring.reliable && ring.offset >= 0, JSON.stringify(ring));
+  check(`LOG-10 outline contrast at least 3:1 ${name}`, ring.ratio >= 3, JSON.stringify(ring));
   console.info(`LOG-10 outline ${name}: ${JSON.stringify(ring)}`);
 }
 

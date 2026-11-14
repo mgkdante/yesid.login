@@ -2,7 +2,7 @@ import type { Browser, Page } from 'playwright-core';
 
 type Check = (name: string, passed: boolean, detail?: string) => void;
 
-/** Every login state is checked, including ErrorIllustration now that rc.3 adopts Y-30. */
+/** Every login state is checked, including ErrorIllustration, which is still by default since yesid.design v0.42.0 (Y-30). */
 function motionSnapshot() {
   const cms = !!document.querySelector('script[src="/editor/sveltia-cms.js"]') && !document.querySelector('#editor-start');
   return { cms, motionAllowed: !matchMedia('(prefers-reduced-motion: reduce)').matches,
