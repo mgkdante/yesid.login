@@ -34,10 +34,10 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 test('a cooperative interrupted child keeps its own exit code and cancels escalation', async () => {
   const runner = child();
-  const control = superviseShard(runner, 'fixture', { limitMs: 10, windows: true });
+  const control = superviseShard(runner, 'fixture', { limitMs: 50, windows: true });
   control.forward('SIGTERM'); runner.finish(143);
   expect(await control.exited).toBe(143);
-  await wait(20);
+  await wait(150);
   expect(runner.signals).toEqual([{ type: 'e2e-signal', signal: 'SIGTERM' }]);
   expect(runner.unreferenced).toBe(false);
 });
@@ -48,7 +48,7 @@ for (const trigger of ['signal', 'IPC loss', 'send failure', 'kill failure']) {
     if (trigger === 'send failure') runner.send = () => { throw new Error('IPC closed'); };
     if (trigger === 'kill failure') runner.kill = signal => { runner.signals.push(signal); throw new Error('kill failed'); };
     const reports: string[] = [];
-    const control = superviseShard(runner, 'fixture', { limitMs: 10, windows: true, report: message => { reports.push(message); } });
+    const control = superviseShard(runner, 'fixture', { limitMs: 50, windows: true, report: message => { reports.push(message); } });
     if (trigger === 'IPC loss') control.ipcDisconnected(); else control.forward('SIGINT');
     expect(await control.exited).toBe(137);
     expect(runner.signals).toContain('SIGKILL');
@@ -59,20 +59,20 @@ for (const trigger of ['signal', 'IPC loss', 'send failure', 'kill failure']) {
 
 test('normal exit after IPC closure cancels escalation without reporting a failure', async () => {
   const runner = child(); const reports: string[] = [];
-  const control = superviseShard(runner, 'fixture', { limitMs: 10, report: message => { reports.push(message); } });
+  const control = superviseShard(runner, 'fixture', { limitMs: 50, report: message => { reports.push(message); } });
   control.ipcDisconnected(); runner.finish(0);
   expect(await control.exited).toBe(0);
-  await wait(20);
+  await wait(150);
   expect(runner.signals).toEqual([]);
   expect(reports).toEqual([]);
 });
 
 test('repeated signals arm only one force-termination deadline', async () => {
   const runner = child();
-  const control = superviseShard(runner, 'fixture', { limitMs: 10, windows: true, report() {} });
+  const control = superviseShard(runner, 'fixture', { limitMs: 50, windows: true, report() {} });
   control.forward('SIGTERM'); control.forward('SIGINT');
   expect(await control.exited).toBe(137);
-  await wait(20);
+  await wait(150);
   expect(runner.signals.filter(signal => signal === 'SIGKILL')).toHaveLength(1);
 });
 
