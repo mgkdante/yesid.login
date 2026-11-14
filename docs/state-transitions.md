@@ -177,8 +177,8 @@ Account lives at `/account?site=<slug>` and needs the stored token for that site
 ### Rules
 
 **A-1. Restore.**
-- If the slug is not a valid target, the token is missing, the session is gone (401 or no session), or the site is not listed: go to `/?site=<slug>`, or `/` without a valid slug.
-- On a network or server failure: keep the form disabled, say which step failed ("We could not load your account. Try again."), and offer Retry, which repeats A-1.
+- If the slug is not a valid target, the token is missing, the session is gone (401 or no session), Account is not allowed for this session (403 from the session, `/account` or `/auth/sites`), or the site is not listed: go to `/?site=<slug>`, or `/` without a valid slug.
+- On any other failure (a network failure, a 429, a 5xx, another status or a malformed reply): keep the form disabled, say which step failed ("We could not load your account. Try again."), and offer Retry, which repeats A-1.
 - The form is never enabled until A-1 succeeds.
 
 **A-2. Messages before any code.** No code message ("That code did not work…") appears before the person has submitted a code. No sign-in failure message ("Could not sign in") appears to a signed-in person. Each failure names its operation: sending a code to the current address, sending a code to the new address, or changing the address.
