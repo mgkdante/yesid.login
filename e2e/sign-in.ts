@@ -1,3 +1,4 @@
+import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
 import { legalDate } from '../login/legal/render.ts';
 import { exampleSiteSql } from '../scripts/example-fixture.ts';
@@ -563,6 +564,7 @@ try {
   await analyticsCounting(browser);
   await themeAtSendTime(page);
   await legalNavigation(page);
+  await accountNavigation(browser, sql, requestCode, CODE, ORIGIN, SHOTS, check);
   await signsInWithARealCode(page);
   await refusesAWrongCode(page);
   await keepsItsPlaceWhenLanguageChanges(page);

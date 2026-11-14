@@ -52,7 +52,10 @@
   }
 }
 
-.login-switch { position: fixed; bottom: 64px; left: 12px; z-index: 10000; display: inline-flex; align-items: center; min-height: 44px; max-width: 12rem; padding: 8px 12px; border-radius: 8px; background: #985000; color: #fff; font: 600 14px var(--sui-font-family-default); }
-.login-switch[hidden] { display: none; }
-.login-switch:focus-visible { outline: 3px solid #e07800; outline-offset: 3px; }
+.login-switch, .login-account { position: fixed; bottom: 64px; left: 12px; z-index: 10000; display: inline-flex; align-items: center; min-height: 44px; max-width: 12rem; padding: 8px 12px; border-radius: 8px; background: #985000; color: #fff; font: 600 14px var(--sui-font-family-default); }
+.login-switch[hidden], .login-account[hidden] { display: none; }
+.login-switch:focus-visible, .login-account:focus-visible { outline: 3px solid #e07800; outline-offset: 3px; }
 @media (max-width: 959px) { .login-switch { bottom: calc(132px + env(safe-area-inset-bottom)); } }
+
+.login-account { bottom: 136px; }
+@media (max-width: 959px) { .login-account { bottom: calc(196px + env(safe-area-inset-bottom)); } }
