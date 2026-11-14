@@ -82,6 +82,13 @@
       change.className = 'login-switch';
       const placeSwitch = () => { change.hidden = /^#\/collections\/[^/]+\/(?:entries|new)(?:\/|$)/.test(location.hash); };
       window.addEventListener('hashchange', placeSwitch); placeSwitch(); document.body.append(change);
+      const account = document.createElement('a');
+      const accountLanguage = document.documentElement.lang;
+      account.href = '/account?site=' + encodeURIComponent(slug) + '&lang=' + accountLanguage;
+      account.textContent = accountLanguage === 'fr' ? 'Mon compte' : accountLanguage === 'es' ? 'Mi cuenta' : 'My account';
+      account.className = 'login-account';
+      const placeAccount = () => { account.hidden = /^#\/collections\/[^/]+\/(?:entries|new)(?:\/|$)/.test(location.hash); };
+      window.addEventListener('hashchange', placeAccount); placeAccount(); document.body.append(account);
       return true;
     } catch (error) { showState(true); return; }
   }

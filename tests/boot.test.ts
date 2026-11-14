@@ -32,7 +32,7 @@ async function boot(options: { token?: string; member?: boolean; expired?: boole
 test('boot only loads Sveltia after session and membership checks', async () => {
   const state = await boot();
   expect(state.calls.map(call => call.path)).toEqual(['/auth/api/get-session', '/auth/sites']);
-  expect(state.scripts).toHaveLength(2); expect(state.navigations).toEqual([]);
+  expect(state.scripts).toHaveLength(3); expect(state.navigations).toEqual([]);
 });
 test('People leaves the screen while an entry is open, because it would cover the form', async () => {
   const state = await boot({ token: 'fake', role: 'owner', hash: '#/collections/pages/entries/area' });
@@ -112,4 +112,18 @@ test('Sveltia storage wrapper is scoped and foreign storage events cannot replac
   expect(adopted).toEqual([]);
   state.fire('storage', {key:'login.session.a',newValue:'same'});
   expect(adopted).toEqual([{key:'sveltia-cms.user',newValue:'same'}]);
+});
+
+// LOG-16 / Account access: every signed-in role gets its own site context.
+test('My account is localized for every role and hides over existing and new entries', async () => {
+  for (const role of ['owner', 'it', 'employee']) for (const [language, label] of [['fr','Mon compte'],['en','My account'],['es','Mi cuenta']]) {
+    const state = await boot({ token: 'fake', role, language });
+    const link = state.scripts.find((item: any) => item.href === `/account?site=a&lang=${language}`) as { textContent: string; hidden: boolean } | undefined;
+    expect(link).toBeDefined();
+    expect(link!.textContent).toBe(label);
+    for (const [hash, hidden] of [['#/collections/pages/entries/home',true],['#/collections/pages/new',true],['#/collections/pages',false],['#/assets',false]]) {
+      state.sandbox.location.hash = hash as string; state.fire('hashchange');
+      expect(link!.hidden).toBe(hidden as boolean);
+    }
+  }
 });
