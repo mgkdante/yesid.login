@@ -1,3 +1,4 @@
+import { log10Chrome, log10Focus, log10Preferences } from './log10.ts';
 import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
 import { legalDate } from '../login/legal/render.ts';
@@ -465,15 +466,19 @@ async function visualMatrix(page: Page) {
     await view.goto(`${ORIGIN}/?lang=${lang}`); await view.locator('#email').waitFor();
     const form = await view.locator('form').boundingBox(); check('form reachable without scrolling: '+prefix, !!form && form.y+form.height <= (width === 390 ? 844 : 800));
     await view.keyboard.press('Tab');
+    await log10Chrome(view, lang as 'fr' | 'en' | 'es', check);
+    await log10Focus(view, view.locator('form button[type=submit]'), prefix+'-email', check);
     await capture(view, prefix+'-signin');
     for (const path of ['legal/privacy', 'legal/terms', 'nope/']) { await view.goto(`${ORIGIN}/${path}?lang=${lang}`); await view.locator('.login-chrome h1').waitFor(); await capture(view,prefix+'-'+path.replace('/','')); }
     await view.goto(`${ORIGIN}/?lang=${lang}`); await view.locator('#email').waitFor();
     await view.locator('#email').fill('pending@example.test'); await view.locator('form button[type="submit"]').click(); await codeField(view).waitFor();
+    await log10Focus(view, view.locator('form button[type=submit]'), prefix+'-code', check);
     await capture(view, prefix+'-code');
     const stored = await page.evaluate(() => localStorage.getItem('login.session.example'));
     await view.evaluate(value => { if(value) localStorage.setItem('login.session.example',value); },stored);
     await view.goto(`${ORIGIN}/?site=example&switch=1&lang=${lang}`); await view.locator('.sites').waitFor(); await capture(view,prefix+'-chooser');
     await view.goto(`${ORIGIN}/example/people?lang=${lang}`); await view.locator('#email').waitFor();
+    await log10Focus(view, view.locator('form button[type=submit]'), prefix+'-people', check);
     await capture(view,prefix+'-people');
     check('no construction props on People: '+prefix, await view.locator('.construction-ground').count() === 0);
     await view.locator('#email').fill('doublecheck@example.test'); await view.locator('form button[type="submit"]').click();
@@ -559,6 +564,7 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
+  await log10Preferences(browser, ORIGIN, check);
   await legalWithoutJavaScript(browser);
   await legalLanguageHash(page);
   await analyticsCounting(browser);
