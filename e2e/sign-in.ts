@@ -1,3 +1,4 @@
+import { sitesHandoff, editorLoading } from './sites-handoff.ts';
 import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
 import { legalDate } from '../login/legal/render.ts';
@@ -141,7 +142,7 @@ async function signsInWithARealCode(page: Page) {
   await requestCode(second,'?lang=en');
   await codeField(second).fill(CODE); await second.locator('form button[type="submit"]').click();
   await second.locator('.sites').waitFor();
-  await second.getByRole('button',{name:'Choice',exact:true}).click();
+  await second.getByText('Choice', { exact: true }).locator('..').getByRole('button').click();
   await second.waitForURL(ORIGIN+'/choice/');
   const tokens = await second.evaluate(()=>[localStorage.getItem('login.session.example'),localStorage.getItem('login.session.choice')]);
   check('two sites keep distinct sessions in two tabs',!!tokens[0] && !!tokens[1] && JSON.parse(tokens[0]).token !== JSON.parse(tokens[1]).token);
@@ -346,7 +347,7 @@ async function pendingStorageRecovery(browser: Awaited<ReturnType<typeof chromiu
       await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
       check('S-1 successful save clears the storage warning and stores the sent address', !(await page.locator('main').innerText()).includes('This browser cannot keep') && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.pending')!).email) === OWNER);
     } else {
-      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.getByRole('status').filter({ hasText: 'No site is linked' }).waitFor();
+      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.getByRole('heading', { name: /No website is linked/ }).waitFor();
       check('S-5 Sites clears the pending storage warning', !(await page.locator('main').innerText()).includes('This browser cannot keep'));
     }
     await context.close();
@@ -1002,6 +1003,8 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
+  await timed('sitesHandoff', () => sitesHandoff(launched, ORIGIN, check));
+  await timed('editorLoading', () => editorLoading(launched, ORIGIN, check));
   await timed('forgivingCodeEntry', () => forgivingCodeEntry(launched));
   await timed('pendingStorageRecovery', () => pendingStorageRecovery(launched));
   await timed('accountCorrectness', () => accountCorrectness(launched));
