@@ -149,8 +149,23 @@ async function refusesAWrongCode(page: Page) {
   await requestCode(page, '?site=example&lang=en');
   await codeField(page).fill('000000');
   await page.locator('form button[type="submit"]').click();
-  await page.locator('[role="status"]').filter({ hasText: /invalid|expired/i }).waitFor({ timeout: 10000 });
+  await page.locator('#code-error').filter({ hasText: /That code did not work/i }).waitFor({ timeout: 10000 });
   check('a wrong code is refused with a message', page.url().includes('/?'));
+  const message = await page.locator('#code-error').innerText();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.locator('#sign-in').click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+  }
+  await codeField(page).fill(CODE); await page.locator('#sign-in').click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+  check('S-6 real exhausted code has the same message as a wrong code', await page.locator('#code-error').innerText() === message);
+  await page.getByRole('button', { name: 'Change email address', exact: true }).click();
+  await requestCode(page, '?site=example&lang=en');
+  await sql("UPDATE verification SET expiresAt = '2000-01-01T00:00:00.000Z' WHERE identifier = 'sign-in-otp-" + OWNER + "'");
+  await codeField(page).fill(CODE); await page.locator('#sign-in').click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+  check('S-6 real expired code has the same message as a wrong code', await page.locator('#code-error').innerText() === message);
+
 }
 
 async function keepsItsPlaceWhenLanguageChanges(page: Page) {
@@ -160,6 +175,145 @@ async function keepsItsPlaceWhenLanguageChanges(page: Page) {
   await codeField(page).waitFor({ timeout: 10000 });
   const lang = await page.evaluate(() => document.documentElement.lang);
   check('changing language keeps step two', lang === 'es');
+}
+
+/** LOG-2, S-1 to S-12: browser-only clock and intercepted replies cannot ship in the app. */
+async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await page.clock.install();
+  let sendStatus = 200;
+  let checkStatus = 400;
+  let lastOtp = '';
+  await page.route('**/auth/api/email-otp/send-verification-otp', route => route.fulfill({ status: sendStatus, json: {}, headers: sendStatus === 429 ? { 'X-Retry-After': '61' } : {} }));
+  await page.route('**/auth/api/sign-in/email-otp', route => {
+    lastOtp = route.request().postDataJSON().otp;
+    return route.fulfill({ status: checkStatus, json: {} });
+  });
+  await page.goto(ORIGIN + '/?lang=en');
+  await page.locator('#email').fill(OWNER);
+  sendStatus = 500;
+  await page.locator('form button[type="submit"]').click();
+  await page.getByRole('status').filter({ hasText: 'We could not process' }).waitFor();
+  check('S-2 failed send returns focus to Email', await page.locator('#email').evaluate(el => document.activeElement === el));
+  sendStatus = 200;
+  await page.locator('form button[type="submit"]').click();
+  await codeField(page).waitFor();
+  check('S-4 no alert is present before a code error', await page.getByRole('alert').count() === 0 && await page.locator('#code-error').count() === 0);
+  await codeField(page).fill('not a code');
+  await page.keyboard.press('Enter');
+  await page.getByRole('alert').filter({ hasText: 'Enter the 6-digit code' }).waitFor();
+  const firstFormat = await page.locator('#code-error').elementHandle();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(el => !el!.isConnected, firstFormat);
+  check('S-4 repeated format failure replaces its single alert without duplicate status text', await page.getByRole('alert').count() === 1 && !(await page.locator('.message').innerText()).includes(await page.locator('#code-error').innerText()));
+  for (const pasted of ['123456', ' 123456', '123 456', '000123']) {
+    await codeField(page).fill(pasted);
+    await page.locator('#sign-in').click();
+    await page.locator('#code-error').filter({ hasText: 'That code did not work' }).waitFor();
+    check('S-4 phone paste reaches the check intact', lastOtp === pasted.replaceAll(' ', ''));
+  }
+  const neutralFailure = await page.locator('#code-error').innerText();
+  for (const cause of ['wrong', 'expired', 'exhausted']) {
+    const previousError = await page.locator('#code-error').elementHandle();
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+    await page.waitForFunction(el => !el!.isConnected, previousError);
+    check('S-6 identical UI for ' + cause + ' 400', await page.locator('#code-error').innerText() === neutralFailure);
+    check('S-6 repeated refusal has one fresh alert and no duplicate status', await page.locator('#code-error').getAttribute('role') === 'alert' && await page.getByRole('alert').count() === 1 && !(await page.locator('.message').innerText()).includes(neutralFailure));
+  }
+  check('S-6 refusal associates the error and selects the digits', await codeField(page).getAttribute('aria-describedby') === 'code-error' && await codeField(page).getAttribute('aria-invalid') === 'true' && await codeField(page).evaluate((el: HTMLInputElement) => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length));
+  checkStatus = 500;
+  await page.locator('#sign-in').click();
+  await page.getByRole('status').filter({ hasText: 'We could not process' }).waitFor();
+  check('S-7 lost check keeps digits with a request failure', await codeField(page).inputValue() === '000123');
+  sendStatus = 500;
+  await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'We could not process' }).waitFor();
+  check('S-8 failed resend keeps digits and restores recovery focus', await codeField(page).inputValue() === '000123' && await page.getByRole('button', { name: 'Request another code', exact: true }).evaluate(el => document.activeElement === el));
+  sendStatus = 429;
+  await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: '2 minutes' }).waitFor();
+  check('S-12 authoritative wait is rounded up', await codeField(page).inputValue() === '000123');
+  sendStatus = 200;
+  await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
+  check('S-8 accepted resend clears digits and focuses field', await codeField(page).inputValue() === '' && await codeField(page).evaluate(el => el === document.activeElement));
+  await codeField(page).fill('123456');
+  await page.locator('#sign-in').focus();
+  await page.clock.fastForward(300250);
+  check('S-10 deadline keeps Code, digits, disabled submit and recovery focus', await codeField(page).inputValue() === '123456' && await page.locator('#sign-in').isDisabled() && await page.getByRole('button', { name: 'Request another code', exact: true }).evaluate(el => el === document.activeElement));
+  check('S-10 expiry has one alert and no duplicate status', await page.locator('#code-error').getAttribute('role') === 'alert' && await page.getByRole('alert').count() === 1 && !(await page.locator('.message').innerText()).includes(await page.locator('#code-error').innerText()));
+  await page.screenshot({ path: resolve(SHOTS, 'log-2-expired-390.png') });
+  const clearance = await page.evaluate(() => ({ heading: document.querySelector('h1')!.getBoundingClientRect().top, header: document.querySelector('header')!.getBoundingClientRect().bottom, scroll: scrollY }));
+  check('S-10 expired heading clears the fixed header at 390 px', clearance.heading >= clearance.header, JSON.stringify(clearance));
+  await page.reload(); await codeField(page).waitFor();
+  check('S-11 reload restores expired context without digits', await codeField(page).inputValue() === '' && await page.locator('#sign-in').isDisabled());
+  await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
+  await page.clock.fastForward(300250);
+  check('S-10 expiry alerts while the code field keeps focus', await codeField(page).evaluate(el => document.activeElement === el) && await page.locator('#code-error').getAttribute('role') === 'alert' && await page.getByRole('alert').count() === 1);
+
+  await page.goto(ORIGIN + '/?lang=fr'); await codeField(page).waitFor();
+  check('S-11 locale change restores expired address', (await page.locator('.lead').innerText()).includes(OWNER) && await page.locator('#sign-in').isDisabled());
+  await page.clock.fastForward(1800250); await page.reload();
+  await page.locator('#email').waitFor();
+  check('S-11 long after deadline restores empty Email', await page.locator('#email').inputValue() === '');
+  await page.locator('#email').fill(OWNER); await page.locator('form button[type="submit"]').click();
+  await codeField(page).waitFor(); await codeField(page).fill('123456');
+  await page.locator('.step-actions button').last().click(); await page.locator('#email').waitFor();
+  check('S-9 changing email keeps the address, clears pending and focuses Email', await page.locator('#email').inputValue() === OWNER && await page.locator('#email').evaluate(el => document.activeElement === el) && await page.evaluate(() => sessionStorage.getItem('login.pending')) === null);
+  await context.close();
+  const blocked = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await blocked.addInitScript(() => {
+    for (const name of ['sessionStorage', 'localStorage']) Object.defineProperty(window, name, { get() { throw new DOMException('Blocked', 'SecurityError'); } });
+  });
+  const b = await blocked.newPage();
+  await b.route('**/auth/api/email-otp/send-verification-otp', route => route.fulfill({ json: {} }));
+  await b.goto(ORIGIN + '/?lang=en'); await b.locator('#email').fill(OWNER);
+  await b.locator('form button[type="submit"]').click(); await codeField(b).waitFor();
+  await b.getByRole('status').filter({ hasText: 'This browser cannot keep' }).waitFor();
+  await b.getByRole('button', { name: 'Request another code', exact: true }).click();
+  await b.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
+  check('S-1 blocked storage permits resend with one warning', (await b.locator('main').innerText()).split('This browser cannot keep').length === 2);
+  await blocked.close();
+}
+
+/** Review regressions: retain the sent address and clear warnings after recovery or Sites. */
+async function pendingStorageRecovery(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  for (const destination of ['save', 'sites']) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addInitScript(() => {
+      Reflect.set(window, 'blockPending', true);
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (this === sessionStorage && key === 'login.pending' && Reflect.get(window, 'blockPending')) throw new DOMException('Blocked', 'SecurityError');
+        return set.call(this, key, value);
+      };
+    });
+    const page = await context.newPage();
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/auth/api/email-otp/send-verification-otp', async route => { await gate; await route.fulfill({ json: {} }); });
+    await page.route('**/auth/api/sign-in/email-otp', route => route.fulfill({ json: {}, headers: { 'set-auth-token': 'test-only-token' } }));
+    await page.route('**/auth/sites', route => route.fulfill({ json: [] }));
+    await page.goto(ORIGIN + '/?lang=en');
+    await page.locator('#email').fill(OWNER); await page.locator('form button[type="submit"]').click();
+    await page.locator('#email').fill('edited@example.test'); release();
+    await codeField(page).waitFor();
+    await page.getByRole('status').filter({ hasText: 'This browser cannot keep' }).waitFor();
+    check('S-1 in-flight email edits cannot change the accepted recipient', (await page.locator('.lead').innerText()).includes(OWNER));
+    if (destination === 'save') {
+      await page.evaluate(() => Reflect.set(window, 'blockPending', false));
+      await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+      await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
+      check('S-1 successful save clears the storage warning and stores the sent address', !(await page.locator('main').innerText()).includes('This browser cannot keep') && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.pending')!).email) === OWNER);
+    } else {
+      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.getByRole('status').filter({ hasText: 'No site is linked' }).waitFor();
+      check('S-5 Sites clears the pending storage warning', !(await page.locator('main').innerText()).includes('This browser cannot keep'));
+    }
+    await context.close();
+  }
 }
 
 // LOG-9 is startup only: no S-*, H-* or A-* proof transition is changed.
@@ -490,7 +644,7 @@ async function expiresInBrowser(page: Page) {
   const stranger = await (await page.context().browser()!.newContext()).newPage();
   await requestCode(stranger, '?site=example&lang=en', 'expired@example.test');
   await codeField(stranger).fill(CODE); await stranger.locator('form button[type="submit"]').click();
-  await stranger.getByRole('status').filter({ hasText: /invalid|expired/i }).waitFor();
+  await stranger.locator('#code-error').filter({ hasText: /That code did not work/i }).waitFor();
   await stranger.context().close();
 }
 
@@ -698,6 +852,8 @@ try {
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
+  await timed('forgivingCodeEntry', () => forgivingCodeEntry(launched));
+  await timed('pendingStorageRecovery', () => pendingStorageRecovery(launched));
   await timed('startupRecovery', () => startupRecovery(launched));
   await timed('startupEffectAndIsolation', () => startupEffectAndIsolation(launched));
   await timed('legalInitialFragment', () => legalInitialFragment(page));
