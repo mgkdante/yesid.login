@@ -4,7 +4,7 @@ export const language = (value: unknown): Locale | undefined =>
   value === 'fr' || value === 'en' || value === 'es' ? value : undefined;
 
 const fr = {
-  switchSite: 'Me déconnecter de ce site pour changer de site', switchNotice: 'Pour ouvrir un autre site, déconnectez-vous de ce site, puis reconnectez-vous avec un code.',
+  switchSite: 'Me déconnecter et continuer', switchWebsites: 'Changer de site', switchNotice: 'Pour changer de site, déconnectez-vous et reconnectez-vous avec un nouveau code.',
   step1: 'Étape 1 sur 2', step2: 'Étape 2 sur 2', codeTitle: 'Entrez le code reçu par courriel', codeLead: 'Si {email} a accès à un site, un code y a été envoyé. Il est valide pendant 5 minutes.', resend: 'Demander un autre code', change: 'Changer d’adresse courriel', resent: 'Demande reçue. Vérifiez votre boîte de réception et vos courriels indésirables. Utilisez le dernier code.', noRestore: 'Ce navigateur ne peut pas conserver cette étape si vous changez de langue. Vous devrez peut-être demander un autre code.', skip: 'Aller au contenu', account: 'Changer mon courriel',
   title: 'Connectez-vous pour modifier votre site', eyebrow: 'Éditeur du site',
   lead: 'Utilisez l’adresse courriel qui a accès à votre site. Connectez-vous avec un code, sans mot de passe.',
@@ -28,7 +28,7 @@ type Copy = Record<keyof typeof fr, string>;
 export const copy: Record<Locale, Copy> = {
   fr,
   en: {
-    switchSite: 'Sign out of this site to switch sites', switchNotice: 'To open another site, sign out of this site, then sign in again with a code.',
+    switchSite: 'Sign out and continue', switchWebsites: 'Switch websites', switchNotice: 'To switch websites, sign out and sign in again with a new code.',
     step1: 'Step 1 of 2', step2: 'Step 2 of 2', codeTitle: 'Enter the code from your email', codeLead: 'If {email} has access to a site, a code has been sent there. It is valid for 5 minutes.', resend: 'Request another code', change: 'Change email address', resent: 'Request received. Check your inbox and junk mail. Use the latest code.', noRestore: 'This browser cannot keep this sign-in step when you change language. You may need to request another code.', skip: 'Skip to content', account: 'Change my email',
     title: 'Sign in to edit your website', eyebrow: 'Site editor', lead: 'Use the email address that has access to your site. Sign in with a code, without a password.',
     email: 'Email address', code: '6-digit code', send: 'Send me a code', verify: 'Sign in',
@@ -48,7 +48,7 @@ export const copy: Record<Locale, Copy> = {
     rateOne: 'Too many requests. Try again in {n} minute.', rateMany: 'Too many requests. Try again in {n} minutes.',
   },
   es: {
-    switchSite: 'Cerrar sesión en este sitio para cambiar de sitio', switchNotice: 'Para abrir otro sitio, cierra sesión en este sitio e inicia sesión de nuevo con un código.',
+    switchSite: 'Cerrar sesión y continuar', switchWebsites: 'Cambiar de sitio', switchNotice: 'Para cambiar de sitio, cierra sesión e inicia sesión de nuevo con un código nuevo.',
     step1: 'Paso 1 de 2', step2: 'Paso 2 de 2', codeTitle: 'Escribe el código de tu correo', codeLead: 'Si {email} tiene acceso a un sitio, se ha enviado un código a esa dirección. Es válido durante 5 minutos.', resend: 'Pedir otro código', change: 'Cambiar el correo', resent: 'Solicitud recibida. Revisa tu bandeja de entrada y el correo no deseado. Usa el código más reciente.', noRestore: 'Este navegador no puede conservar este paso si cambias de idioma. Puede que tengas que pedir otro código.', skip: 'Ir al contenido', account: 'Cambiar mi correo',
     title: 'Inicia sesión para editar tu sitio', eyebrow: 'Editor del sitio', lead: 'Usa el correo que tiene acceso a tu sitio. Inicia sesión con un código, sin contraseña.',
     email: 'Correo electrónico', code: 'Código de 6 dígitos', send: 'Enviarme un código', verify: 'Iniciar sesión',

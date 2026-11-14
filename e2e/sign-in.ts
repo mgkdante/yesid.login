@@ -87,6 +87,42 @@ async function requestCode(page: Page, query: string, email = OWNER) {
   await setPendingCode(email);
 }
 
+// LOG-3 / S-17: switching remains a server sign-out; translated actions must fit.
+async function switchActionsFit(page: Page) {
+  const viewport = page.viewportSize()!;
+  for (const lang of ['fr', 'en', 'es']) for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const [screen, path, ready] of [
+      ['switch', '/?site=example&switch=1&', '.sites'],
+      ['people', '/example/people?', '#email']
+    ]) {
+      await page.goto(`${ORIGIN}${path}lang=${lang}`);
+      await page.locator(ready).waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const clipped = await page.locator('main button, main a[data-slot="button"]').evaluateAll(buttons => buttons.flatMap(button => {
+        const box = button.getBoundingClientRect();
+        if (box.left < 0 || box.right > document.documentElement.clientWidth) return [button.textContent?.trim()];
+        const container = button.closest('[data-slot="card"]')
+          ?? button.closest('.people-add')?.querySelector('[data-slot="card"]');
+        if (!container) return [`Missing container: ${button.textContent?.trim()}`];
+        const bounds = container.getBoundingClientRect();
+        if (box.left < bounds.left || box.right > bounds.right) return [button.textContent?.trim()];
+        const elements = [button, ...button.querySelectorAll('span')];
+        return elements.filter(el => el.clientWidth > 0 && (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight))
+          .map(() => button.textContent?.trim());
+      }));
+      check(`LOG-3 S-17 button labels fit ${screen}/${lang}/${width}`, clipped.length === 0, clipped.join(' | '));
+      if (screen === 'switch') {
+        const announcements = (await page.getByRole('status').allTextContents()).filter(text => text.trim());
+        check(`LOG-3 S-17 switch explanation announced once ${lang}/${width}`,
+          await page.locator('.form-card [role="status"]').count() === 1 && announcements.length === 1);
+      }
+      await page.screenshot({ path: resolve(SHOTS, `log-3-${screen}-${lang}-${width}.png`), fullPage: true });
+    }
+  }
+  await page.setViewportSize(viewport);
+}
+
 async function signsInWithARealCode(page: Page) {
   await requestCode(page, '?lang=fr');
   await codeField(page).fill(CODE);
@@ -114,12 +150,12 @@ async function signsInWithARealCode(page: Page) {
   const retained = await page.evaluate(()=>JSON.parse(localStorage.getItem('sveltia-cms.user')!).token);
   check('the first tab restores only its site token',retained===stored.token);
   await second.goto(ORIGIN+'/?site=choice&switch=1&lang=en');
-  await second.getByRole('button',{name:'Sign out of this site to switch sites',exact:true}).click();
+  await second.getByRole('button',{name:'Sign out and continue',exact:true}).click();
   await second.locator('#email').waitFor();
   const remaining=await second.evaluate(()=>[localStorage.getItem('login.session.example'),localStorage.getItem('login.session.choice')]);
   check('switching clears only the current site',!!remaining[0] && remaining[1]===null);
   const ended=await fetch(ORIGIN+'/auth/sites',{headers:{Authorization:'Bearer '+JSON.parse(tokens[1]!).token}});
-  check('switching revokes the server session',ended.status===401);
+  check('S-17 switching revokes the server session',ended.status===401);
   await second.close();
   await sql("DELETE FROM membership WHERE site_slug='choice'");
   await page.locator('a.login-people').waitFor({ timeout: 15000 });
@@ -142,6 +178,7 @@ async function signsInWithARealCode(page: Page) {
   await page.getByText(OWNER).first().waitFor({ timeout: 15000 });
   check('the People page lists this site', true);
   await page.screenshot({ path: resolve(SHOTS, 'people.png') });
+  await switchActionsFit(page);
   await page.evaluate(() => localStorage.clear());
 }
 
