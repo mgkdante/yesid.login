@@ -132,8 +132,8 @@
         {#each view.sites as site}
           <Button size="cta" variant="outline" onclick={() => controller.open(site.slug)}>{site.label}</Button>
         {/each}
-      </div>{#if view.message === "switchNotice"}<Button size="cta" disabled={view.busy} onclick={() => controller.switchSite()}>{text.switchSite}</Button>{/if}</Card>
+      </div>{#if view.message === "switchNotice"}<p>{text.switchNotice}</p><Button class="wrap-action" size="cta" disabled={view.busy} onclick={() => controller.switchSite()}>{text.switchSite}</Button>{/if}</Card>
     {/if}
-    <p class="message" role="status">{statusMessage} {storageMessage}</p>
+    <p class="message" role="status">{view.step === 'sites' && view.message === 'switchNotice' ? '' : statusMessage} {storageMessage}</p>
   </main>
 </Chrome>
