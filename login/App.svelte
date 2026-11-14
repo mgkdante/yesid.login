@@ -24,6 +24,7 @@
   const pending = readStep(sessionStore);
   let email = $state(pending?.email ?? '');
   let code = $state('');
+  let codeAttempt = $state(0);
   let view = $state<State>({ step: 'ask', busy: false, sites: [] });
   let codeInput = $state<HTMLInputElement>();
   const controller = createController({
@@ -80,6 +81,7 @@
       return;
     }
     if (expired) return;
+    codeAttempt += 1;
     await controller.verify(email, code);
     await tick();
     if (view.message === 'format' || view.message === 'invalid') {
@@ -119,7 +121,9 @@
       <Card class="form-card"><form onsubmit={event => { event.preventDefault(); void verify(); }}>
         <label for="code">{text.code}</label>
         <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" aria-describedby={fieldMessage ? "code-error" : undefined} aria-invalid={fieldMessage ? "true" : undefined} bind:value={code} bind:this={codeInput} />
-        <p id="code-error">{fieldMessage}</p>
+        {#key codeAttempt}
+          {#if fieldMessage}<p id="code-error" role="alert">{fieldMessage}</p>{/if}
+        {/key}
         <Button id="sign-in" type="submit" size="cta" disabled={view.busy || expired}>{view.busy && view.operation === 'verify' ? text.checking : text.verify}</Button>
       </form></Card>
       <div class="step-actions"><button disabled={view.busy} bind:this={resendButton} onclick={() => requestCode(true)}>{view.busy && view.operation === 'send' ? text.requesting : text.resend}</button><button disabled={view.busy} onclick={back}>{text.change}</button></div>

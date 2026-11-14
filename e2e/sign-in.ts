@@ -203,7 +203,14 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   sendStatus = 200;
   await page.locator('form button[type="submit"]').click();
   await codeField(page).waitFor();
-  check('S-6 field feedback is described without a second live region', await page.locator('#code-error').getAttribute('role') === null && await page.locator('main [role="status"]').count() === 1);
+  check('S-4 no alert is present before a code error', await page.getByRole('alert').count() === 0 && await page.locator('#code-error').count() === 0);
+  await codeField(page).fill('not a code');
+  await page.keyboard.press('Enter');
+  await page.getByRole('alert').filter({ hasText: 'Enter the 6-digit code' }).waitFor();
+  const firstFormat = await page.locator('#code-error').elementHandle();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(el => !el!.isConnected, firstFormat);
+  check('S-4 repeated format failure replaces its single alert without duplicate status text', await page.getByRole('alert').count() === 1 && !(await page.locator('.message').innerText()).includes(await page.locator('#code-error').innerText()));
   for (const pasted of ['123456', ' 123456', '123 456', '000123']) {
     await codeField(page).fill(pasted);
     await page.locator('#sign-in').click();
@@ -212,9 +219,12 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   }
   const neutralFailure = await page.locator('#code-error').innerText();
   for (const cause of ['wrong', 'expired', 'exhausted']) {
-    await page.locator('#sign-in').click();
+    const previousError = await page.locator('#code-error').elementHandle();
+    await page.keyboard.press('Enter');
     await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+    await page.waitForFunction(el => !el!.isConnected, previousError);
     check('S-6 identical UI for ' + cause + ' 400', await page.locator('#code-error').innerText() === neutralFailure);
+    check('S-6 repeated refusal has one fresh alert and no duplicate status', await page.locator('#code-error').getAttribute('role') === 'alert' && await page.getByRole('alert').count() === 1 && !(await page.locator('.message').innerText()).includes(neutralFailure));
   }
   check('S-6 refusal associates the error and selects the digits', await codeField(page).getAttribute('aria-describedby') === 'code-error' && await codeField(page).getAttribute('aria-invalid') === 'true' && await codeField(page).evaluate((el: HTMLInputElement) => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length));
   checkStatus = 500;
@@ -237,11 +247,17 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   await page.locator('#sign-in').focus();
   await page.clock.fastForward(300250);
   check('S-10 deadline keeps Code, digits, disabled submit and recovery focus', await codeField(page).inputValue() === '123456' && await page.locator('#sign-in').isDisabled() && await page.getByRole('button', { name: 'Request another code', exact: true }).evaluate(el => el === document.activeElement));
+  check('S-10 expiry has one alert and no duplicate status', await page.locator('#code-error').getAttribute('role') === 'alert' && await page.getByRole('alert').count() === 1 && !(await page.locator('.message').innerText()).includes(await page.locator('#code-error').innerText()));
   await page.screenshot({ path: resolve(SHOTS, 'log-2-expired-390.png') });
   const clearance = await page.evaluate(() => ({ heading: document.querySelector('h1')!.getBoundingClientRect().top, header: document.querySelector('header')!.getBoundingClientRect().bottom, scroll: scrollY }));
   check('S-10 expired heading clears the fixed header at 390 px', clearance.heading >= clearance.header, JSON.stringify(clearance));
   await page.reload(); await codeField(page).waitFor();
   check('S-11 reload restores expired context without digits', await codeField(page).inputValue() === '' && await page.locator('#sign-in').isDisabled());
+  await page.getByRole('button', { name: 'Request another code', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
+  await page.clock.fastForward(300250);
+  check('S-10 expiry alerts while the code field keeps focus', await codeField(page).evaluate(el => document.activeElement === el) && await page.locator('#code-error').getAttribute('role') === 'alert' && await page.getByRole('alert').count() === 1);
+
   await page.goto(ORIGIN + '/?lang=fr'); await codeField(page).waitFor();
   check('S-11 locale change restores expired address', (await page.locator('.lead').innerText()).includes(OWNER) && await page.locator('#sign-in').isDisabled());
   await page.clock.fastForward(1800250); await page.reload();

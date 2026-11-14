@@ -25,3 +25,13 @@ test('S-1, S-9, S-11 blocked storage never throws on read, write or removal', ()
   expect(readStep(blocked)).toBeUndefined(); expect(saveStep(blocked, 'a@example.test', 1)).toBe(false);
   expect(() => clearStep(blocked)).not.toThrow();
 });
+
+
+test('S-1, S-11 failed replacement removes previously saved pending context', () => {
+  const { values, store } = fixture();
+  expect(saveStep(store, 'first@example.test', 1000)).toBe(true);
+  const failingWrite = { ...store, setItem() { throw Error('Storage full'); } };
+  expect(saveStep(failingWrite, 'second@example.test', 2000)).toBe(false);
+  expect(readStep(store, 2000)).toBeUndefined();
+  expect(values.size).toBe(0);
+});

@@ -18,5 +18,5 @@ export function readStep(storage: Store, now = Date.now()): PendingStep | undefi
 }
 export function saveStep(storage: Store, email: string, sentAt: number): boolean {
   try { storage.setItem(KEY, JSON.stringify({ step: 'enter', email, sentAt, expiresAt: sentAt + 300000 })); return true; }
-  catch { return false; }
+  catch { clearStep(storage); return false; }
 }
