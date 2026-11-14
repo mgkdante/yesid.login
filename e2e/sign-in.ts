@@ -1,3 +1,4 @@
+import { log10Motion, watchLog10Motion } from './log10-motion.ts';
 import { log10Chrome, log10Focus, log10Preferences } from './log10.ts';
 import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
@@ -651,7 +652,7 @@ async function expiresInBrowser(page: Page) {
 
 async function themeAtSendTime(page: Page) {
   for (const system of ['light','dark'] as const) {
-    await page.emulateMedia({ colorScheme: system, reducedMotion: 'reduce' });
+    await page.emulateMedia({ colorScheme: system, reducedMotion: 'no-preference' });
     await page.goto(ORIGIN); await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
     await page.reload(); await page.locator('#email').waitFor();
     await page.route('**/auth/api/email-otp/send-verification-otp', async route => {
@@ -706,6 +707,7 @@ async function checkContrast(page: Page, name: string) {
   check('text contrast at least 4.5:1: '+name,failures.length===0,failures.join(', '));
 }
 async function capture(page: Page, name: string) {
+  await log10Motion(page, name, check);
   check('no horizontal scroll: ' + name, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   // LOG-1: presentation of S-3/S-4 and A-3/A-4/A-5 fields; their validation and proofs stay unchanged.
   const inputs = await page.locator('main input:visible').evaluateAll(nodes => nodes.map(node => {
@@ -775,6 +777,9 @@ async function peopleStates(view: Page, prefix: string, lang: string) {
   await view.unroute('**/example/people/members');
   await view.route('**/example/people/members', route => route.fulfill({ status: 403, json: { message: 'Not allowed' } }));
   await view.goto(url); await view.locator('[data-slot="error-page"]').waitFor(); await capture(view,prefix+'-people-refused');
+  await view.unroute('**/example/people/members');
+  await view.route('**/example/people/members', route => route.fulfill({ status: 502, json: {} }));
+  await view.goto(url); await view.locator('[data-slot="error-page"]').waitFor(); await capture(view,prefix+'-people-unavailable');
   await view.unroute('**/example/people/members');
 }
 async function editorStates(view: Page, prefix: string, lang: string) {
@@ -852,6 +857,7 @@ try {
   await timed('prepare', prepare);
   const launched = await (browserLaunch = chromium.launch());
   browser = launched;
+  const finishMotionChecks = watchLog10Motion(launched, check);
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' })).newPage();
   const problems: string[] = [];
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
@@ -882,6 +888,7 @@ try {
 
   writeFileSync(resolve(SHOTS,'index.md'), '# Local polish and legal checks\n\n'+captures.map(file=>`- [${file}](${file})`).join('\n'));
   check('no script errors or security policy violations on the sign-in pages', problems.length === 0, problems.slice(0, 3).join(' | ').slice(0, 400));
+  finishMotionChecks();
   console.info(`All passed. Screenshots: ${SHOTS}`);
 } finally {
   console.info(`timing - total: ${Math.round(performance.now() - started)} ms; commands: ${commandCount}, ${Math.round(commandMs)} ms`);
