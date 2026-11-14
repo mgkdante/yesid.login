@@ -104,8 +104,8 @@ Handler tests use SQLite-backed D1 fakes, fetch stubs, and a session resolver pa
 `/`, `/auth/popup` and `/<slug>/people` load it. Worker HTML references fixed filenames and is never cached;
 Cloudflare assets use their normal content-based deployment handling.
 The build refuses Node versions other than 24 LTS. Bun runs installation and tests.
-The browser suite defaults to localhost:8799; set `LOGIN_E2E_PORT` to a free local port
-when another development session is using it.
+The browser suite uses four local ports starting at localhost:8799; set `LOGIN_E2E_PORT`
+to the first of four free consecutive ports when another development session is using them.
 
 The exact v0.42.0 UI release uses its explicit peers `@yesid/tokens`, `@yesid/motion`,
 `@yesid/seo-kit`, Svelte 5.57.2 and Satori 0.33.5. CSS order is tokens, Tailwind,
@@ -216,7 +216,7 @@ The temporary worktree must contain the deploy-now scripts (older commits may no
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-$env:PATH = "C:\Users\otalo\Yesito\projects\brand\yesid.static-template\.tools;$env:PATH"
+$env:PATH = "C:\Users\<user>\Yesito\projects\brand\yesid.static-template\.tools;$env:PATH"
 $deploySha = '<sha>'
 $deploySource = (Get-Location).Path
 if (git status --porcelain) { throw 'Start from a clean tree.' }
@@ -251,7 +251,29 @@ on the operator's machine.
 
 ## End-to-end check
 
-`bun run test:e2e` signs in for real in a browser: the real Worker with a local database, a typed code, the editor, the People page, a wrong code, and a language change on step two. `bun run deploy` runs it first, because unit tests can't catch a page that refuses a valid code. It needs Node 24 on PATH for the build and a Playwright Chromium install (`bunx playwright-core install chromium`). Screenshots land in `.wrangler/e2e/shots`. The Bun launcher bundles the runner and executes it with Node 24 so Wrangler's Miniflare API uses Node's fetch dispatcher. One local workerd owns both HTTP and fixture SQL through its D1 binding; storage is fresh and ephemeral for every run. Migrations run through that binding before browser traffic. No fixture CLI opens the database while the Worker is alive, and no developer secret file is loaded. Section and SQL timings are printed at the end of each section. A Wrangler upgrade must rerun `node e2e/reproduce-d1.mjs binding traffic 8836` (and its `cli` comparison) and the full browser suite, because the harness uses `unstable_startWorker` and Miniflare internals.
+`bun run test:e2e` signs in for real in a browser: the real Worker with a local database, a typed code, the editor, the People page, a wrong code, and a language change on step two. `bun run deploy` runs it first, because unit tests can't catch a page that refuses a valid code. It needs Node 24 on PATH for the build and a Playwright Chromium install (`bunx playwright-core install chromium`). Screenshots land in `.wrangler/e2e/shard-N/shots`. The Bun launcher bundles the runner and executes it with Node 24 so Wrangler's Miniflare API uses Node's fetch dispatcher. Each shard’s local workerd owns both HTTP and fixture SQL through its D1 binding; storage is fresh and ephemeral for every shard. Migrations run through that binding before browser traffic. No fixture CLI opens the database while the Worker is alive, and no developer secret file is loaded. Section and SQL timings are printed at the end of each section. A Wrangler upgrade must rerun `node e2e/reproduce-d1.mjs binding traffic 8836` (and its `cli` comparison) and the full browser suite, because the harness uses `unstable_startWorker` and Miniflare internals.
+
+`bun run test:e2e` runs all four shards in parallel and fails if any shard fails.
+Each shard starts a separate Node process, ephemeral Worker/D1 database and Chromium,
+with the unchanged ten-minute watchdog and one-minute fixture/startup limit. Its fixtures
+are created through its own Worker binding. Scenario registration is checked against the
+assignment before execution: missing, duplicate and unknown assignments fail the run.
+Keep dependent journeys in their existing order when changing `e2e/shards.ts`.
+
+Run one shard with `bun run test:e2e -- --shard 2/4` (or `LOGIN_E2E_SHARD=2/4`).
+Its port is the base plus its zero-based shard index, including when run alone.
+Use `bun run test:e2e -- --sequential` to measure all shards without contention.
+Section, shard and suite wall times are printed; shard/suite times include cleanup.
+Screenshots are under `.wrangler/e2e/shard-N/shots` (or under `LOGIN_E2E_SHOTS/shard-N/shots`).
+Private temporary directories under the OS temp directory (`yl-e2e-N-*`) are removed
+after each process exits. Keeping these outside the checkout prevents Windows SQLite
+path-length failures: even `persist: false` uses on-disk temporary D1 storage. Interrupts are forwarded to every active shard for
+bounded cleanup. The parent force-terminates a child that remains alive seven seconds
+after signal forwarding or IPC disconnection (the five-second child cleanup limit plus
+a two-second margin). A sequential run stops starting new shards after interruption.
+Folder removal allows five filesystem retries at a 200 ms base delay for lingering
+Windows handles. A persistent cleanup failure reports its path and child status, fails
+a passing shard, and preserves an already failing child's exit code. It never reruns a scenario.
 
 For the local D1 contention probe, use `node e2e/reproduce-d1.mjs cli traffic 8836` and compare with `node e2e/reproduce-d1.mjs binding traffic 8836`. `idle` disables traffic; the optional last argument selects a persistence directory. See [the diagnosis record](docs/d1-e2e-diagnosis.md).
 
