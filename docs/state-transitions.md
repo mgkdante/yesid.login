@@ -108,7 +108,7 @@ Required pastes: `123456`, ` 123456`, `123456 `, `123 456`, `123-456`, `000123`.
 
 **S-12. Throttle wording.** A throttle message appears only for a 429 from the server. When the reply carries `X-Retry-After`, the message gives that wait rounded up to whole minutes ("Too many requests. Try again in {n} minutes.", with the singular for 1). Without it, the message is "Too many requests. Try again later." A per-IP limit does not depend on the address, so showing its wait reveals nothing about accounts.
 
-**S-13. Sites load.** `GET /auth/sites` with the token.
+**S-13. Sites load.** `GET /auth/sites` with the token. While the request is pending, show "Loading your websites…" in the page language, without a chooser heading or list. A failure shows the failure message and Try again without a chooser heading. Automatic opening never flashes the chooser first.
 - On 401: clear the requested site's stored session, then go to Email with "Your sign-in has ended. Sign in again." in the page language.
 - On another failure, or a list that fails `validTarget`: stay with the site-list failure message and a Try again that repeats S-13 with the token in memory.
 
@@ -119,7 +119,7 @@ Required pastes: `123456`, ` 123456`, `123456 `, `123 456`, `123-456`, `000123`.
 **S-16. No site.** The empty message replaces the list and its heading, with Sign out. No empty card is drawn.
 
 **S-17. Switch.** With `?switch` and a listed requested site, show the switch question with Sign out and continue and Keep editing.
-- Sign out and continue posts `sign-out` with the token. On success it removes `login.session.<requested>` and returns to Email with the switch notice. On failure, including the Worker's 502 `Session still active`, it stays with the request failure message.
+- Sign out and continue posts `sign-out` with the token. On success it removes `login.session.<requested>` and returns to Email with the normal sign-in heading, explanation, email field and send action. No switch explanation or additional notice is shown. On failure, including the Worker's 502 `Session still active`, it stays with the request failure message.
 - Keep editing opens the requested site (H-1). Binding the same site again is accepted by the Worker.
 - If removing the stored session fails after a successful sign-out, the sign-out still counts (the server has ended the session) and the stale token gets a 401 wherever it is used.
 - Clearing storage alone is never a sign-out.
@@ -158,7 +158,7 @@ The token is posted once per popup. A non-null opener alone is never success.
 - If the opener is `closed` when the timer ends or Try again is pressed, show the H-4 missing-opener message, then remove the listener and the timer.
 - The token is never posted before an acknowledgement.
 
-**H-7. Closing.** The editor may close the popup after success. The popup never claims that unsaved work in the editor is safe or lost. Leaving or closing the popup removes the listener and the timer.
+**H-7. Closing.** The editor may close the popup after success. The popup never claims that unsaved work in the editor is safe or lost. Leaving or closing the popup removes the listener and the timer. A `pagehide` with `persisted: true` keeps the handshake active so restoring the popup from the back-forward cache can still accept acknowledgement or offer retry.
 
 ## Account
 
@@ -177,8 +177,8 @@ Account lives at `/account?site=<slug>` and needs the stored token for that site
 ### Rules
 
 **A-1. Restore.**
-- If the slug is not a valid target, the token is missing, the session is gone (401 or no session), or the site is not listed: go to `/?site=<slug>`, or `/` without a valid slug.
-- On a network or server failure: keep the form disabled, say which step failed ("We could not load your account. Try again."), and offer Retry, which repeats A-1.
+- If the slug is not a valid target, the token is missing, the session is gone (401 or no session), Account is not allowed for this session (403 from the session, `/account` or `/auth/sites`), or the site is not listed: go to `/?site=<slug>`, or `/` without a valid slug.
+- On any other failure (a network failure, a 429, a 5xx, another status or a malformed reply): keep the form disabled, say which step failed ("We could not load your account. Try again."), and offer Retry, which repeats A-1.
 - The form is never enabled until A-1 succeeds.
 
 **A-2. Messages before any code.** No code message ("That code did not work…") appears before the person has submitted a code. No sign-in failure message ("Could not sign in") appears to a signed-in person. Each failure names its operation: sending a code to the current address, sending a code to the new address, or changing the address.
@@ -226,10 +226,10 @@ Account lives at `/account?site=<slug>` and needs the stored token for that site
 | The deadline is taken after the reply, not before the request | Clock | LOG-2 |
 | "Too many requests. Try again in a few minutes." ignores the `X-Retry-After` wait the server gives | S-12 | LOG-2 (sign-in), LOG-5 (Account) |
 | The switch action label is clipped in French and Spanish | S-17 | LOG-3 |
-| A 401 on the site list returns to Email without saying the sign-in ended | S-13 | LOG-6 |
-| The empty message sits under an empty card, and the chooser repeats its heading | S-15, S-16 | LOG-6 |
-| The token already waits for the editor's reply, but the screen reports success as soon as an opener exists (`popupHandover`); the listener is never removed and every reply re-posts the token | H-4 to H-7 | LOG-6 |
-| The editor loading screen shows "…" or "!" and asks for a family name that `fonts.css` does not declare | H-3 | LOG-6 |
+| Closed: a site-list 401 returns to Email with the sign-in-ended explanation | S-13 | LOG-6 |
+| Closed: the chooser has one heading; the empty message replaces its heading and card | S-15, S-16 | LOG-6 |
+| Closed: popup success waits for the exact captured-opener acknowledgement, posts once, and cleans up its listener and timer | H-4 to H-7 | LOG-6 |
+| Closed: editor loading names the Site when known, updates a persistent sentence live region, and uses Inter Variable | H-3 | LOG-6 |
 | A failed Account restore enables the form; "Invalid or expired code" and "Could not sign in" appear out of place | A-1, A-2 | LOG-5 |
 | The Account code field cuts a formatted paste | A-4, A-5 | LOG-5 |
 | A language change loses the Account stage and the new address | A-8 | LOG-5 (keep the address); LOG-15 (full stages) |

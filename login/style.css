@@ -79,3 +79,6 @@ a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .legal-toc a { display: inline-block; padding-block: 0.25rem; }
 
 .startup-status { display: block; }
+
+/* Long translated switch actions keep their full label at narrow widths. */
+.wrap-action { min-width: 0; max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; text-align: center; }

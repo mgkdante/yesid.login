@@ -1,5 +1,6 @@
 import { log10Motion, watchLog10Motion } from './log10-motion.ts';
 import { log10Chrome, log10Focus, log10Preferences } from './log10.ts';
+import { sitesHandoff, editorLoading } from './sites-handoff.ts';
 import { accountNavigation } from './account-navigation.ts';
 import { privacy, terms, LEGAL_UPDATED } from '../login/legal/copy.ts';
 import { legalDate } from '../login/legal/render.ts';
@@ -89,6 +90,42 @@ async function requestCode(page: Page, query: string, email = OWNER) {
   await setPendingCode(email);
 }
 
+// LOG-3 / S-17: switching remains a server sign-out; translated actions must fit.
+async function switchActionsFit(page: Page) {
+  const viewport = page.viewportSize()!;
+  for (const lang of ['fr', 'en', 'es']) for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const [screen, path, ready] of [
+      ['switch', '/?site=example&switch=1&', '.sites'],
+      ['people', '/example/people?', '#email']
+    ]) {
+      await page.goto(`${ORIGIN}${path}lang=${lang}`);
+      await page.locator(ready).waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const clipped = await page.locator('main button, main a[data-slot="button"]').evaluateAll(buttons => buttons.flatMap(button => {
+        const box = button.getBoundingClientRect();
+        if (box.left < 0 || box.right > document.documentElement.clientWidth) return [button.textContent?.trim()];
+        const container = button.closest('[data-slot="card"]')
+          ?? button.closest('.people-add')?.querySelector('[data-slot="card"]');
+        if (!container) return [`Missing container: ${button.textContent?.trim()}`];
+        const bounds = container.getBoundingClientRect();
+        if (box.left < bounds.left || box.right > bounds.right) return [button.textContent?.trim()];
+        const elements = [button, ...button.querySelectorAll('span')];
+        return elements.filter(el => el.clientWidth > 0 && (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight))
+          .map(() => button.textContent?.trim());
+      }));
+      check(`LOG-3 S-17 button labels fit ${screen}/${lang}/${width}`, clipped.length === 0, clipped.join(' | '));
+      if (screen === 'switch') {
+        const announcements = (await page.getByRole('status').allTextContents()).filter(text => text.trim());
+        check(`LOG-3 S-17 switch explanation announced once ${lang}/${width}`,
+          await page.locator('.form-card [role="status"]').count() === 1 && announcements.length === 1);
+      }
+      await page.screenshot({ path: resolve(SHOTS, `log-3-${screen}-${lang}-${width}.png`), fullPage: true });
+    }
+  }
+  await page.setViewportSize(viewport);
+}
+
 async function signsInWithARealCode(page: Page) {
   await requestCode(page, '?lang=fr');
   await codeField(page).fill(CODE);
@@ -107,7 +144,7 @@ async function signsInWithARealCode(page: Page) {
   await requestCode(second,'?lang=en');
   await codeField(second).fill(CODE); await second.locator('form button[type="submit"]').click();
   await second.locator('.sites').waitFor();
-  await second.getByRole('button',{name:'Choice',exact:true}).click();
+  await second.getByText('Choice', { exact: true }).locator('..').getByRole('button').click();
   await second.waitForURL(ORIGIN+'/choice/');
   const tokens = await second.evaluate(()=>[localStorage.getItem('login.session.example'),localStorage.getItem('login.session.choice')]);
   check('two sites keep distinct sessions in two tabs',!!tokens[0] && !!tokens[1] && JSON.parse(tokens[0]).token !== JSON.parse(tokens[1]).token);
@@ -116,12 +153,12 @@ async function signsInWithARealCode(page: Page) {
   const retained = await page.evaluate(()=>JSON.parse(localStorage.getItem('sveltia-cms.user')!).token);
   check('the first tab restores only its site token',retained===stored.token);
   await second.goto(ORIGIN+'/?site=choice&switch=1&lang=en');
-  await second.getByRole('button',{name:'Sign out of this site to switch sites',exact:true}).click();
+  await second.getByRole('button',{name:'Sign out and continue',exact:true}).click();
   await second.locator('#email').waitFor();
   const remaining=await second.evaluate(()=>[localStorage.getItem('login.session.example'),localStorage.getItem('login.session.choice')]);
   check('switching clears only the current site',!!remaining[0] && remaining[1]===null);
   const ended=await fetch(ORIGIN+'/auth/sites',{headers:{Authorization:'Bearer '+JSON.parse(tokens[1]!).token}});
-  check('switching revokes the server session',ended.status===401);
+  check('S-17 switching revokes the server session',ended.status===401);
   await second.close();
   await sql("DELETE FROM membership WHERE site_slug='choice'");
   await page.locator('a.login-people').waitFor({ timeout: 15000 });
@@ -144,6 +181,7 @@ async function signsInWithARealCode(page: Page) {
   await page.getByText(OWNER).first().waitFor({ timeout: 15000 });
   check('the People page lists this site', true);
   await page.screenshot({ path: resolve(SHOTS, 'people.png') });
+  await switchActionsFit(page);
   await page.evaluate(() => localStorage.clear());
 }
 
@@ -311,7 +349,7 @@ async function pendingStorageRecovery(browser: Awaited<ReturnType<typeof chromiu
       await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
       check('S-1 successful save clears the storage warning and stores the sent address', !(await page.locator('main').innerText()).includes('This browser cannot keep') && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.pending')!).email) === OWNER);
     } else {
-      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.getByRole('status').filter({ hasText: 'No site is linked' }).waitFor();
+      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.getByRole('heading', { name: /No website is linked/ }).waitFor();
       check('S-5 Sites clears the pending storage warning', !(await page.locator('main').innerText()).includes('This browser cannot keep'));
     }
     await context.close();
@@ -621,6 +659,118 @@ async function peopleOutcomeChecks(page: Page, lang: 'fr' | 'en' | 'es', width: 
   setMode('unchanged'); await submit();
   check(`LOG-4 next action clears refresh failure ${lang}/${width}`, !(await status.innerText()).includes(failure) && await status.getByRole('link').count() === 0);
 }
+// LOG-5: A-1/A-2/A-4/A-5/A-8/A-9, isolated synthetic replies; no email leaves the browser.
+async function accountCorrectness(browser: import('playwright-core').Browser) {
+  for (const lang of ['en', 'fr', 'es']) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addInitScript(() => localStorage.setItem('login.session.example', JSON.stringify({ token: 'account-test' })));
+    const page = await context.newPage();
+    let restoreStatus = 503, accessStatus = 200, status = 500, waitHeader = true, calls = 0, lastOtp = '', malformed = false, lost = false;
+    await page.route('**/auth/api/get-session', route => route.fulfill({ status: restoreStatus, json: { session: {}, user: { id: 'account-user', email: 'current@example.test' } } }));
+    await page.route('**/account', route => route.request().headers().authorization
+      ? route.fulfill({ status: accessStatus, json: {} }) : route.continue());
+    await page.route('**/auth/sites', route => route.fulfill({ json: [{ slug: 'example' }] }));
+    await page.route('**/auth/api/email-otp/*', route => {
+      calls++; lastOtp = route.request().postDataJSON().otp || '';
+      if (lost) return route.abort();
+      return route.fulfill({ status, json: malformed ? {} : { success: true }, headers: status === 429 && waitHeader ? { 'X-Retry-After': '61' } : {} });
+    });
+    const submit = () => page.locator('form button[type="submit"]').click();
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`);
+    const retry = page.getByRole('button', { name: { en: 'Retry', fr: 'Réessayer', es: 'Reintentar' }[lang], exact: true });
+    await retry.waitFor();
+    check(`A-1 failed restore disables every field ${lang}`, await page.locator('#email').isDisabled() && await page.locator('form button').isDisabled());
+    restoreStatus = 200; await retry.click(); await page.locator('#email:enabled').waitFor();
+    await page.locator('#email').fill('new@example.test');
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang === 'en' ? 'fr' : 'en'}`);
+    await page.locator('#email:enabled').waitFor();
+    check(`A-8 address survives language reload ${lang}`, await page.locator('#email').inputValue() === 'new@example.test');
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await page.locator('#email:enabled').waitFor();
+    await submit(); await page.getByRole('status').filter({ hasText: /current address|adresse actuelle|dirección actual/ }).waitFor();
+    check(`A-2 failure before code names sending ${lang}`, await page.getByRole('alert').count() === 0 && await page.locator('#email').inputValue() === 'new@example.test' && await page.locator('#email').evaluate(el => document.activeElement === el));
+    for (const failure of ['malformed', 'lost']) {
+      status = 200; malformed = failure === 'malformed'; lost = failure === 'lost'; await submit();
+      await page.getByRole('status').filter({ hasText: /current address|adresse actuelle|dirección actual/ }).waitFor();
+      check(`A-2 address ${failure} reply restores focus ${lang}`, await page.locator('#email').evaluate(el => document.activeElement === el));
+    }
+    malformed = false; lost = false;
+    status = 429; await submit(); await page.getByRole('status').filter({ hasText: /2 minutes|2 minutos/ }).waitFor();
+    const expectedWait = { en: 'Too many requests. Try again in 2 minutes.', fr: 'Trop de demandes. Réessayez dans 2 minutes.', es: 'Demasiadas solicitudes. Inténtalo en 2 minutos.' }[lang];
+    check(`A-2 S-12 authoritative wait and email focus ${lang}`, await page.locator('.message').innerText() === expectedWait && await page.locator('#email').evaluate(el => document.activeElement === el));
+    waitHeader = false; await submit();
+    await page.getByRole('status').filter({ hasText: /later|plus tard|más tarde/ }).waitFor();
+    status = 200; await submit(); await codeField(page).waitFor();
+    check(`A-3 both addresses named ${lang}`, (await page.locator('main').innerText()).includes('current@example.test') && (await page.locator('main').innerText()).includes('new@example.test'));
+    for (const stage of ['current', 'new']) {
+      await page.reload(); await codeField(page).waitFor();
+      check(`A-8 ${stage} restores empty code ${lang}`, await codeField(page).inputValue() === '');
+      await codeField(page).fill('123456');
+      const otherLang = lang === 'en' ? 'fr' : 'en';
+      await page.goto(`${ORIGIN}/account?site=example&lang=${otherLang}`); await codeField(page).waitFor();
+      check(`A-8 ${stage} language change restores stage without code ${lang}`, await codeField(page).inputValue() === '' && await page.locator('html').getAttribute('lang') === otherLang && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.account.example')!).stage) === stage && (await page.locator('main').innerText()).includes('new@example.test'));
+      await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await codeField(page).waitFor();
+      status = 429; await codeField(page).fill('123456'); waitHeader = true; await submit();
+      await page.getByRole('status').filter({ hasText: expectedWait }).waitFor();
+      check(`A-2 ${stage} throttle restores focus ${lang}`, await codeField(page).evaluate(el => document.activeElement === el));
+      status = 400;
+      for (const value of ['123456', ' 123456', '123456 ', '123 456', '000123', '123-456', '123–456', '123\t456', '123\u00a0456', '123\u200b456']) {
+        const before = calls; await codeField(page).fill(value); await submit(); await page.locator('#code-error').waitFor();
+        check(`A-4/A-5 ${stage} paste intact ${lang}`, calls === before + 1 && lastOtp === value.replace(/[ \t\u00a0\u200b\-\u2013]/g, '') && await page.getByRole('alert').count() === 1 && await codeField(page).evaluate((el: HTMLInputElement) => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length));
+      }
+      for (const value of ['12345', '1234567', '12a456', 'code:123456', '１２３４５６', '123.456', '123456.']) {
+        const before = calls; await codeField(page).fill(value); await submit(); await page.locator('#code-error').waitFor();
+        check(`A-4/A-5 ${stage} rejects prose/invalid format ${lang}`, calls === before && await codeField(page).getAttribute('aria-invalid') === 'true');
+      }
+      await codeField(page).fill('123456'); status = 500; await submit();
+      await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      check(`A-2 ${stage} server failure retains code ${lang}`, await codeField(page).inputValue() === '123456' && await codeField(page).evaluate(el => document.activeElement === el));
+      status = 200; malformed = true; await submit();
+      await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      check(`A-2 ${stage} malformed reply restores focus ${lang}`, await codeField(page).evaluate(el => document.activeElement === el));
+      malformed = false; lost = true; await submit();
+      await page.getByRole('status').filter({ hasText: stage === 'current' ? /check this code|vérifier ce code|verificar este código/ : /change your email|changer votre adresse|cambiar tu correo/ }).waitFor();
+      lost = false;
+      check(`A-2 ${stage} lost response retains code and focus ${lang}`, await codeField(page).inputValue() === '123456' && await codeField(page).evaluate(el => document.activeElement === el));
+      await page.screenshot({ path: resolve(SHOTS, `log-5-${lang}-${stage}-390.png`) });
+      if (stage === 'current') { await submit(); await page.getByRole('status').filter({ hasText: /If this address|Si cette adresse|Si esta dirección/ }).waitFor(); }
+    }
+    // A-8 expired challenge keeps only the address; another person's record is discarded.
+    await page.evaluate(() => { const key = 'login.account.example'; const r = JSON.parse(sessionStorage.getItem(key)!); r.sentAt = Date.now() - 301000; r.expiresAt = r.sentAt + 300000; sessionStorage.setItem(key, JSON.stringify(r)); });
+    await page.reload(); await page.locator('#email:enabled').waitFor();
+    check(`A-8 expired restore retains address ${lang}`, await page.locator('#email').inputValue() === 'new@example.test');
+    await page.evaluate(() => { const key = 'login.account.example'; const r = JSON.parse(sessionStorage.getItem(key)!); r.userId = 'other-user'; sessionStorage.setItem(key, JSON.stringify(r)); });
+    await page.reload(); await page.locator('#email:enabled').waitFor();
+    check(`A-8 wrong user cleared ${lang}`, await page.locator('#email').inputValue() === '' && await page.evaluate(() => sessionStorage.getItem('login.account.example')) === null);
+    await page.locator('#email').fill('new@example.test'); status = 401; await submit();
+    await page.waitForURL(`${ORIGIN}/?site=example`);
+    check(`A-9 401 clears account context ${lang}`, await page.evaluate(() => sessionStorage.getItem('login.account.example')) === null);
+    accessStatus = 403;
+    await page.goto(`${ORIGIN}/account?site=example&lang=${lang}`); await page.waitForURL(`${ORIGIN}/?site=example`);
+    check(`A-1 forbidden Account access returns to sign-in ${lang}`, await retry.count() === 0);
+    await context.close();
+  }
+}
+async function accountStorageBlocked(browser: import('playwright-core').Browser) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('login.session.example', JSON.stringify({ token: 'account-test' }));
+    Object.defineProperty(window, 'sessionStorage', { get() { throw new DOMException('Blocked', 'SecurityError'); } });
+  });
+  const page = await context.newPage();
+  await page.route('**/auth/api/get-session', route => route.fulfill({ json: { session: {}, user: { id: 'account-user', email: 'current@example.test' } } }));
+  await page.route('**/account', route => route.fulfill({ json: {} }));
+  await page.route('**/auth/sites', route => route.fulfill({ json: [{ slug: 'example' }] }));
+  await page.route('**/auth/api/email-otp/*', route => route.fulfill({ json: { success: true } }));
+  await page.goto(`${ORIGIN}/account?site=example&lang=en`); await page.locator('#email:enabled').waitFor();
+  await page.locator('#email').fill('new@example.test'); await page.locator('form button').click(); await codeField(page).waitFor();
+  await codeField(page).fill('123 456'); await page.locator('form button').click();
+  await page.getByRole('status').filter({ hasText: 'If this address' }).waitFor();
+  check('A-8 blocked context storage allows both proof stages with one warning', (await page.locator('main').innerText()).split('This browser cannot keep').length === 2);
+  await codeField(page).fill('123 456'); await page.locator('form button').click();
+  await page.getByRole('status').filter({ hasText: 'All sessions are closed' }).waitFor();
+  check('A-5 blocked record removal still shows completion', await page.locator('form').count() === 0);
+  await context.close();
+}
 async function accountFlow(page: Page) {
   await page.goto(`${ORIGIN}/account?lang=en`);
   await page.waitForURL(`${ORIGIN}/`);
@@ -633,6 +783,7 @@ async function accountFlow(page: Page) {
   await setPendingCode('e2e-owner:changed@example.test', CODE, 'change-email');
   await codeField(page).fill(CODE); await page.locator('form button[type="submit"]').click();
   await page.getByText('All sessions are closed', { exact: false }).waitFor();
+  check('A-5 completion clears account and site records', await page.evaluate(() => sessionStorage.getItem('login.account.example') === null && localStorage.getItem('login.session.example') === null));
   check('email change deletes every session', (await sql('SELECT count(*) AS remaining FROM session WHERE userId=\'e2e-owner\'')).includes('"remaining": 0'));
   await requestCode(page, '?site=example&lang=en', 'changed@example.test');
   await codeField(page).fill(CODE); await page.locator('form button[type="submit"]').click();
@@ -864,8 +1015,12 @@ try {
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
   await timed('log10Preferences', () => log10Preferences(launched, ORIGIN, check));
+  await timed('sitesHandoff', () => sitesHandoff(launched, ORIGIN, check));
+  await timed('editorLoading', () => editorLoading(launched, ORIGIN, check));
   await timed('forgivingCodeEntry', () => forgivingCodeEntry(launched));
   await timed('pendingStorageRecovery', () => pendingStorageRecovery(launched));
+  await timed('accountCorrectness', () => accountCorrectness(launched));
+  await timed('accountStorageBlocked', () => accountStorageBlocked(launched));
   await timed('startupRecovery', () => startupRecovery(launched));
   await timed('startupEffectAndIsolation', () => startupEffectAndIsolation(launched));
   await timed('legalInitialFragment', () => legalInitialFragment(page));

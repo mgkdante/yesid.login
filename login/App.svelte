@@ -4,7 +4,7 @@
   import Chrome from './Chrome.svelte';
   import { readStep, saveStep, clearStep } from './step.ts';
   import { Button } from '@yesid/ui/button';
-  import { copy } from './copy.ts';
+  import { copy, throttleMessage } from './copy.ts';
   import { createController, popupHandover, type State } from './controller.ts';
   import { initialLocale } from './preferences.ts';
 
@@ -26,6 +26,8 @@
   let code = $state('');
   let codeAttempt = $state(0);
   let view = $state<State>({ step: 'ask', busy: false, sites: [] });
+  let messageElement = $state<HTMLParagraphElement>();
+  let heading = $state<HTMLHeadingElement>();
   let codeInput = $state<HTMLInputElement>();
   const controller = createController({
     fetch: async (...args) => {
@@ -33,18 +35,27 @@
       if (response.ok && response.headers.get('set-auth-token')) clearStep(sessionStore);
       return response;
     }, storage: localStore, search: location.search,
-    navigate: path => { clearStep(sessionStore); location.assign(path); }, handOver: token => popupHandover(window, token)
-  }, location.pathname === '/auth/popup', value => { view = value; if (value.step === 'sites') storageMessage = ''; if (controller?.token || value.message === 'connected' || value.message === 'reopen') clearStep(sessionStore); });
+    navigate: path => { clearStep(sessionStore); location.assign(path); }, handOver: (token, update) => popupHandover(window, token, update)
+  }, location.pathname === '/auth/popup', value => {
+    const changed = view.step !== value.step || view.switching !== value.switching || view.empty !== value.empty || (view.message === 'connected') !== (value.message === 'connected');
+    view = value;
+    if (changed && value.step !== 'enter' && value.step !== 'loadingSites') {
+      void tick().then(() => value.step === 'sitesFailure' ? messageElement?.focus() : heading?.focus());
+    }
+    if (value.step === 'sites' || value.step === 'loadingSites') storageMessage = '';
+    if (controller?.token || value.message === 'connected' || value.message === 'reopen') clearStep(sessionStore);
+  });
   let expiresAt = pending?.expiresAt ?? 0;
   let expired = $state(!!pending && Date.now() >= pending.expiresAt);
   let storageMessage = $state('');
   let warnedStorage = false;
   let emailInput = $state<HTMLInputElement>();
   let resendButton = $state<HTMLButtonElement>();
+  const screenTitle = $derived(view.step === 'enter' ? text.codeTitle : view.step === 'opening' ? view.message === 'connected' ? text.connected : text.openingEditor : view.step === 'loadingSites' ? text.loadingSites : view.step === 'sitesFailure' ? text.sitesError : view.step === 'sites' ? view.empty ? text.empty : view.switching ? text.switchWebsites : text.choose : text.title);
   const fieldMessage = $derived(expired ? text.expired : view.message === 'format' || view.message === 'invalid' ? text[view.message] : '');
-  const statusMessage = $derived(view.message === 'rate' && view.retryMinutes !== undefined
-    ? (view.retryMinutes === 1 ? text.rateOne : text.rateMany).replace('{n}', String(view.retryMinutes))
-    : view.message && !['neutral', 'format', 'invalid'].includes(view.message) ? text[view.message] : '');
+  const statusMessage = $derived(view.message === 'rate'
+    ? throttleMessage(locale, view.retryMinutes)
+    : view.message && !['neutral', 'format', 'invalid', 'empty', 'connected', 'reopen', 'openingEditor', 'handoverFailed'].includes(view.message) ? text[view.message] : '');
   async function back() {
     if (view.busy) return;
     clearStep(sessionStore); code = ''; expired = false; expiresAt = 0;
@@ -100,17 +111,19 @@
       expired = true;
       if (moveFocus) { void tick().then(() => resendButton?.focus({ preventScroll: true })); }
     }, 250);
-    return () => clearInterval(timer);
+    const leave = (event: PageTransitionEvent) => { if (!event.persisted) controller.dispose(); };
+    window.addEventListener('pagehide', leave);
+    return () => { clearInterval(timer); controller.dispose(); window.removeEventListener('pagehide', leave); };
   });
 </script>
 
-<svelte:head><title>{view.step === 'enter' ? text.codeTitle : view.step === 'sites' ? text.choose : text.title} | yesid.dev</title></svelte:head>
+<svelte:head><title>{screenTitle} | yesid.dev</title></svelte:head>
 
 <Chrome {locale} center>
   <main id="main" tabindex="-1">
-    {#if view.step !== 'sites'}<p class="label-station">{view.step === 'ask' ? text.step1 : text.step2}</p>{/if}
-    <h1>{view.step === 'enter' ? text.codeTitle : view.step === 'sites' ? text.choose : text.title}</h1>
-    <p class="lead">{view.step === 'enter' ? text.codeLead.replace('{email}', email.trim()) : view.step === 'ask' ? text.lead : ''}</p>
+    {#if view.step === 'ask' || view.step === 'enter'}<p class="label-station">{view.step === 'ask' ? text.step1 : text.step2}</p>{/if}
+    {#if view.step !== 'loadingSites' && view.step !== 'sitesFailure'}<h1 tabindex="-1" bind:this={heading}>{screenTitle}</h1>{/if}
+    {#if view.step === 'ask' || view.step === 'enter'}<p class="lead">{view.step === 'enter' ? text.codeLead.replace('{email}', email.trim()) : text.lead}</p>{/if}
     {#if view.step === 'ask'}
       <Card class="form-card"><form onsubmit={send}>
         <label for="email">{text.email}</label>
@@ -127,13 +140,27 @@
         <Button id="sign-in" type="submit" size="cta" disabled={view.busy || expired}>{view.busy && view.operation === 'verify' ? text.checking : text.verify}</Button>
       </form></Card>
       <div class="step-actions"><button disabled={view.busy} bind:this={resendButton} onclick={() => requestCode(true)}>{view.busy && view.operation === 'send' ? text.requesting : text.resend}</button><button disabled={view.busy} onclick={back}>{text.change}</button></div>
+    {:else if view.step === 'loadingSites'}
+      <p role="status">{view.opening ? text.openingSite.replace('{site}', view.sites.find(site => site.slug === view.opening)?.label ?? '') : text.loadingSites}</p>
+    {:else if view.step === 'opening'}
+      <p role="status">{text[view.message ?? 'openingEditor']}</p>
+      {#if view.message === 'handoverFailed'}<Button onclick={() => controller.retryHandover()}>{text.retry}</Button>{/if}
+      {#if view.message === 'reopen'}<a href="/">{text.title}</a>{/if}
     {:else}
-      <Card class="form-card"><div class="sites">
-        {#each view.sites as site}
-          <Button size="cta" variant="outline" onclick={() => controller.open(site.slug)}>{site.label}</Button>
-        {/each}
-      </div>{#if view.message === "switchNotice"}<Button size="cta" disabled={view.busy} onclick={() => controller.switchSite()}>{text.switchSite}</Button>{/if}</Card>
+      {#if view.sites.length}
+        <Card class="form-card"><div class="sites">
+          {#each view.switching ? view.sites.filter(site => site.slug === controller.requested) : view.sites as site}
+            <div>
+              <p>{site.label}</p>
+              <Button class="wrap-action" size="cta" variant="outline" disabled={view.busy} aria-busy={view.opening === site.slug} onclick={() => controller.open(site.slug)}>{view.opening === site.slug ? text.openingSite.replace('{site}', site.label) : view.openError === site.slug ? text.retry : view.switching && site.slug === controller.requested ? text.keepEditing : text.openEditor}</Button>
+              {#if view.openError === site.slug}<p role="status">{view.message === 'editorStorage' ? text.editorStorage : text.openFailure}</p>{/if}
+            </div>
+          {/each}
+        </div>{#if view.switching}<p role="status">{text.switchNotice}</p><Button class="wrap-action" size="cta" disabled={view.busy} onclick={() => controller.switchSite()}>{text.switchSite}</Button>{/if}</Card>
+      {/if}
+      {#if view.message === 'sitesError'}<Button disabled={view.busy} onclick={() => controller.retrySites()}>{text.retry}</Button>{/if}
+      {#if view.empty}<Button disabled={view.busy} onclick={() => controller.switchSite()}>{text.signOut}</Button>{/if}
     {/if}
-    <p class="message" role="status">{statusMessage} {storageMessage}</p>
+    <p id="sign-in-message" class="message" role="status" tabindex="-1" bind:this={messageElement}>{view.step === 'sites' && (view.message === 'switchNotice' || view.message === 'editorStorage') ? '' : statusMessage} {storageMessage}</p>
   </main>
 </Chrome>

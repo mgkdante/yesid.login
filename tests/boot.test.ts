@@ -2,9 +2,11 @@ import { test, expect } from 'bun:test';
 import { runInNewContext } from 'node:vm';
 
 const source = await Bun.file('public/editor/boot.js').text();
-async function boot(options: { token?: string; member?: boolean; expired?: boolean; role?: string; language?: string; hash?: string } = { token: 'fake' }) {
+async function boot(options: { token?: string; member?: boolean; expired?: boolean; role?: string; language?: string; hash?: string; holdFrame?: boolean } = { token: 'fake' }) {
   let stored: string | null = options.token ? JSON.stringify({ backendName: 'github', token: options.token }) : null;
   const navigations: string[] = [], scripts: unknown[] = [], calls: { path: string; init?: RequestInit }[] = [];
+  const panels: any[] = [];
+  let frame = () => {};
   let timer: () => Promise<void> = async () => {};
   const listeners: Record<string, ((event?: any) => void)[]> = {};
   const entries = new Map<string,string>();
@@ -12,10 +14,11 @@ async function boot(options: { token?: string; member?: boolean; expired?: boole
   entries.set('login.session.b', JSON.stringify({token:'other'}));
   entries.set('sveltia-cms.user', JSON.stringify({token:'legacy'}));
   const sandbox = {
+    requestAnimationFrame: (callback: () => void) => { frame = callback; if (!options.holdFrame) callback(); },
     JSON, URL, Request, Response, Headers, Date, encodeURIComponent,
     location: { pathname: '/a/', hash: options.hash ?? '', href: 'https://login.test/a/', origin: 'https://login.test', replace: (path: string) => navigations.push(path) },
     localStorage: { getItem: (key: string) => key === 'login.language' ? options.language : entries.get(key) ?? null, setItem: (key:string,value:string) => { entries.set(key,value); }, removeItem: (key:string) => { entries.delete(key); } },
-    document: { documentElement: { lang: 'fr' }, getElementById: () => null, body: { textContent: '', append: (element: any) => { if (element.id !== 'editor-start') scripts.push(element); } }, createElement: () => ({ append() {}, setAttribute() {} }) },
+    document: { documentElement: { lang: 'fr' }, getElementById: () => null, body: { textContent: '', append: (element: any) => { if (element.id !== 'editor-start') scripts.push(element); else panels.push(element); } }, createElement: (tagName: string) => ({ tagName, children: [] as any[], append(...elements: any[]) { this.children.push(...elements); }, setAttribute() {} }) },
     setInterval: (callback: () => Promise<void>) => { timer = callback; },
     window: { addEventListener: (name: string, callback: (event?: any) => void) => { (listeners[name] ??= []).push(callback); }, fetch: async (path: string, init?: RequestInit) => {
       calls.push({ path, init });
@@ -27,7 +30,7 @@ async function boot(options: { token?: string; member?: boolean; expired?: boole
   };
   runInNewContext(source, sandbox);
   await new Promise(resolve => setTimeout(resolve, 0));
-  return { entries, sandbox, navigations, scripts, calls, fire: (name: string, event?: any) => listeners[name]?.forEach(callback => callback(event)), remove: () => { entries.delete('login.session.a'); }, timer: () => timer() };
+  return { panels, frame: () => frame(), entries, sandbox, navigations, scripts, calls, fire: (name: string, event?: any) => listeners[name]?.forEach(callback => callback(event)), remove: () => { entries.delete('login.session.a'); }, timer: () => timer() };
 }
 test('boot only loads Sveltia after session and membership checks', async () => {
   const state = await boot();
@@ -126,4 +129,14 @@ test('My account is localized for every role and hides over existing and new ent
       expect(link!.hidden).toBe(hidden as boolean);
     }
   }
+});
+
+
+test('H-3 background tab has a heading before its first animation frame; only status waits', async () => {
+  const state = await boot({ token: 'fake', holdFrame: true });
+  const title = state.panels[0].children.find((element: any) => element.tagName === 'h1');
+  const status = state.panels[0].children.find((element: any) => element.className === 'editor-status');
+  expect(title.textContent).toBe('Ouverture de votre éditeur…');
+  expect(status.textContent ?? '').toBe('');
+  state.frame(); expect(status.textContent).toBe(title.textContent);
 });

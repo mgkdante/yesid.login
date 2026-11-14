@@ -1,21 +1,33 @@
 {
   let language = 'fr';
   try { language = localStorage.getItem('login.language') || 'fr'; } catch { /* Default language. */ }
-  const words = { fr: ['Ouverture de votre éditeur', 'Éditeur indisponible. Rechargez la page.', 'Recharger', 'Confidentialité', 'Conditions'], en: ['Opening your editor', 'Editor unavailable. Reload the page.', 'Reload', 'Privacy', 'Terms'], es: ['Abriendo tu editor', 'Editor no disponible. Recarga la página.', 'Recargar', 'Privacidad', 'Condiciones'] }[language] || ['Opening your editor', 'Editor unavailable. Reload the page.', 'Reload', 'Privacy', 'Terms'];
+  const translations = {
+    fr: ['Ouverture de votre éditeur…', 'Impossible d’ouvrir l’éditeur. Réessayez ou contactez Yesid.', 'Réessayer', 'Confidentialité', 'Conditions', 'Ouverture de l’éditeur de {site}…', 'Contactez Yesid'],
+    en: ['Opening your editor…', 'We could not open the editor. Try again or contact Yesid.', 'Try again', 'Privacy', 'Terms', 'Opening the editor for {site}…', 'Contact Yesid'],
+    es: ['Abriendo tu editor…', 'No pudimos abrir el editor. Inténtalo de nuevo o contacta con Yesid.', 'Intentar de nuevo', 'Privacidad', 'Condiciones', 'Abriendo el editor de {site}…', 'Contacta con Yesid']
+  };
+  const words = translations[language] || translations.fr;
+  let siteLabel;
   document.documentElement.lang = ['fr', 'en', 'es'].includes(language) ? language : 'fr';
-  function showState(failed = false) {
-    document.getElementById('editor-start')?.remove();
-    const panel = document.createElement('main'); panel.id = 'editor-start';
-    const brand = document.createElement('p'); brand.className = 'editor-station'; brand.textContent = 'yesid. | login';
-    const title = document.createElement('h1'); title.textContent = words[failed ? 1 : 0];
-    const status = document.createElement('p'); status.setAttribute('role', 'status'); status.textContent = failed ? '!' : '…';
-    panel.append(brand, title, status);
-    if (failed) { const retry = document.createElement('button'); retry.textContent = words[2]; retry.onclick = () => location.reload(); panel.append(retry); }
-    const footer = document.createElement('footer');
-    for (const [index, path] of ['privacy', 'terms'].entries()) { const link = document.createElement('a'); link.href = '/legal/' + path + '?lang=' + document.documentElement.lang; link.textContent = words[index + 3]; footer.append(link); }
-    panel.append(footer); document.body.append(panel);
+  const panel = document.createElement('main'); panel.id = 'editor-start';
+  const brand = document.createElement('p'); brand.className = 'editor-station'; brand.textContent = 'yesid. | login';
+  const title = document.createElement('h1'); title.textContent = words[0];
+  const status = document.createElement('p'); status.setAttribute('role', 'status'); status.className = 'editor-status';
+  const retry = document.createElement('button'); retry.textContent = words[2]; retry.onclick = () => location.reload(); retry.hidden = true;
+  const help = document.createElement('a'); help.href = 'https://yesid.dev/contact'; help.textContent = words[6]; help.hidden = true;
+  const footer = document.createElement('footer');
+  for (const [index, path] of ['privacy', 'terms'].entries()) { const link = document.createElement('a'); link.href = '/legal/' + path + '?lang=' + document.documentElement.lang; link.textContent = words[index + 3]; footer.append(link); }
+  panel.append(brand, title, status, retry, help, footer); document.body.append(panel);
+  let failedState = false;
+  function showState(failed = failedState) {
+    failedState = failed;
+    const sentence = failed ? words[1] : siteLabel ? words[5].replace('{site}', siteLabel) : words[0];
+    if (title.textContent !== sentence) title.textContent = sentence;
+    if (status.textContent !== sentence) status.textContent = sentence;
+    retry.hidden = !failed; help.hidden = !failed;
   }
-  showState();
+  // Establish the empty live region before the first announcement.
+  requestAnimationFrame(() => { if (status.textContent !== title.textContent) status.textContent = title.textContent; });
   const slug = location.pathname.split('/')[1];
   const KEY = 'login.session.' + slug;
   const legacy = 'sveltia-cms.user';
@@ -63,6 +75,7 @@
       if (!sites.ok) throw Error('Sites indisponibles. Rechargez la page.');
       const site = (await sites.json()).find(site => site.slug === slug);
       if (!site) { location.replace('/'); return; }
+      if (typeof site.label === 'string' && site.label) { siteLabel = site.label; showState(); }
       if (site.role === 'owner' || site.role === 'it') {
         const link = document.createElement('a');
         link.href = '/' + slug + '/people';
