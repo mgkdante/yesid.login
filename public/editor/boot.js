@@ -9,19 +9,25 @@
   const words = translations[language] || translations.fr;
   let siteLabel;
   document.documentElement.lang = ['fr', 'en', 'es'].includes(language) ? language : 'fr';
-  function showState(failed = false) {
-    document.getElementById('editor-start')?.remove();
-    const panel = document.createElement('main'); panel.id = 'editor-start';
-    const brand = document.createElement('p'); brand.className = 'editor-station'; brand.textContent = 'yesid. | login';
-    const title = document.createElement('h1'); title.textContent = failed ? words[1] : siteLabel ? words[5].replace('{site}', siteLabel) : words[0];
-    const status = document.createElement('p'); status.setAttribute('role', 'status'); status.textContent = title.textContent;
-    panel.append(brand, title, status);
-    if (failed) { const retry = document.createElement('button'); retry.textContent = words[2]; retry.onclick = () => location.reload(); panel.append(retry); const help = document.createElement('a'); help.href = 'https://yesid.dev/contact'; help.textContent = words[6]; panel.append(help); }
-    const footer = document.createElement('footer');
-    for (const [index, path] of ['privacy', 'terms'].entries()) { const link = document.createElement('a'); link.href = '/legal/' + path + '?lang=' + document.documentElement.lang; link.textContent = words[index + 3]; footer.append(link); }
-    panel.append(footer); document.body.append(panel);
+  const panel = document.createElement('main'); panel.id = 'editor-start';
+  const brand = document.createElement('p'); brand.className = 'editor-station'; brand.textContent = 'yesid. | login';
+  const title = document.createElement('h1');
+  const status = document.createElement('p'); status.setAttribute('role', 'status'); status.className = 'editor-status';
+  const retry = document.createElement('button'); retry.textContent = words[2]; retry.onclick = () => location.reload(); retry.hidden = true;
+  const help = document.createElement('a'); help.href = 'https://yesid.dev/contact'; help.textContent = words[6]; help.hidden = true;
+  const footer = document.createElement('footer');
+  for (const [index, path] of ['privacy', 'terms'].entries()) { const link = document.createElement('a'); link.href = '/legal/' + path + '?lang=' + document.documentElement.lang; link.textContent = words[index + 3]; footer.append(link); }
+  panel.append(brand, title, status, retry, help, footer); document.body.append(panel);
+  let failedState = false;
+  function showState(failed = failedState) {
+    failedState = failed;
+    const sentence = failed ? words[1] : siteLabel ? words[5].replace('{site}', siteLabel) : words[0];
+    if (title.textContent !== sentence) title.textContent = sentence;
+    if (status.textContent !== sentence) status.textContent = sentence;
+    retry.hidden = !failed; help.hidden = !failed;
   }
-  showState();
+  // Establish the empty live region before the first announcement.
+  requestAnimationFrame(() => showState());
   const slug = location.pathname.split('/')[1];
   const KEY = 'login.session.' + slug;
   const legacy = 'sveltia-cms.user';

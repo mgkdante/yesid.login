@@ -4,7 +4,7 @@ import { normalizeCode } from './code.ts';
 export const USER_KEY = 'sveltia-cms.user';
 export const siteKey = (slug: string) => 'login.session.' + slug;
 type Site = { slug: string; label: string };
-export type State = { step: 'ask' | 'enter' | 'sites' | 'opening'; busy: boolean; empty?: boolean; switching?: boolean; opening?: string; openError?: string; operation?: 'send' | 'verify'; retryMinutes?: number; sentAt?: number; message?: Message; sites: Site[] };
+export type State = { step: 'ask' | 'enter' | 'sites' | 'loadingSites' | 'sitesFailure' | 'opening'; busy: boolean; empty?: boolean; switching?: boolean; opening?: string; openError?: string; operation?: 'send' | 'verify'; retryMinutes?: number; sentAt?: number; message?: Message; sites: Site[] };
 export interface Ports {
   fetch: typeof fetch;
   storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -49,7 +49,7 @@ class LoginController {
   async openRow(slug: string) {
     this.emit({ busy: true, opening: slug, openError: undefined, message: undefined });
     try { await this.navigate(slug); }
-    catch (error) { this.emit({ openError: slug, message: error instanceof Error && error.message === 'editorStorage' ? 'editorStorage' : undefined }); }
+    catch (error) { this.emit({ step: 'sites', openError: slug, message: error instanceof Error && error.message === 'editorStorage' ? 'editorStorage' : undefined }); }
     finally { this.emit({ busy: false, opening: undefined }); }
   }
   sessionEnded() {
@@ -79,7 +79,7 @@ class LoginController {
   }
   async choose(value: string) {
     this.token = value;
-    this.emit({ step: 'sites', sites: [], message: undefined, switching: false, empty: false, openError: undefined });
+    this.emit({ step: 'loadingSites', sites: [], message: undefined, switching: false, empty: false, openError: undefined });
     let sites: Site[];
     try {
       const response = await this.ports.fetch('/auth/sites', { headers: { Authorization: 'Bearer ' + value } });
@@ -87,14 +87,14 @@ class LoginController {
       if (!response.ok) throw Error();
       sites = await response.json();
       if (!Array.isArray(sites) || sites.some(site => !site || typeof site.slug !== 'string' || !validTarget(site.slug) || typeof site.label !== 'string')) throw Error();
-    } catch { this.emit({ message: 'sitesError' }); return; }
+    } catch { this.emit({ step: 'sitesFailure', message: 'sitesError' }); return; }
     this.emit({ sites, empty: sites.length === 0 });
     if (validTarget(this.requested) && sites.some(site => site.slug === this.requested)) {
-      if (new URLSearchParams(this.ports.search).has('switch')) { this.emit({ message: 'switchNotice', switching: true }); return; }
+      if (new URLSearchParams(this.ports.search).has('switch')) { this.emit({ step: 'sites', message: 'switchNotice', switching: true }); return; }
       await this.openRow(this.requested); return;
     }
     if (sites.length === 1) { await this.openRow(sites[0].slug); return; }
-    this.emit({ message: sites.length ? undefined : 'empty' });
+    this.emit({ step: 'sites', message: sites.length ? undefined : 'empty' });
   }
   async attempt(work: () => Promise<void>, fallback: Message) {
     if (this.state.busy) return;
@@ -159,8 +159,9 @@ export function popupHandover(host: Window, token: string, update: (message: Mes
     finished = true;
     clearTimeout(timer);
     host.removeEventListener('message', receive);
-    host.removeEventListener('pagehide', dispose);
+    host.removeEventListener('pagehide', leave);
   }
+  function leave(event: PageTransitionEvent) { if (!event.persisted) dispose(); }
   function receive(event: MessageEvent) {
     if (finished || event.origin !== origin || event.source !== opener || event.data !== 'authorizing:github') return;
     dispose();
@@ -179,7 +180,7 @@ export function popupHandover(host: Window, token: string, update: (message: Mes
     try { opener.postMessage('authorizing:github', origin); } catch { missing(); }
   }
   host.addEventListener('message', receive);
-  host.addEventListener('pagehide', dispose);
+  host.addEventListener('pagehide', leave);
   retry();
   return { retry, dispose };
 }

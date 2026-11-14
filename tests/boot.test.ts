@@ -12,6 +12,7 @@ async function boot(options: { token?: string; member?: boolean; expired?: boole
   entries.set('login.session.b', JSON.stringify({token:'other'}));
   entries.set('sveltia-cms.user', JSON.stringify({token:'legacy'}));
   const sandbox = {
+    requestAnimationFrame: (callback: () => void) => callback(),
     JSON, URL, Request, Response, Headers, Date, encodeURIComponent,
     location: { pathname: '/a/', hash: options.hash ?? '', href: 'https://login.test/a/', origin: 'https://login.test', replace: (path: string) => navigations.push(path) },
     localStorage: { getItem: (key: string) => key === 'login.language' ? options.language : entries.get(key) ?? null, setItem: (key:string,value:string) => { entries.set(key,value); }, removeItem: (key:string) => { entries.delete(key); } },

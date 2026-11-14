@@ -39,7 +39,7 @@
     const changed = view.step !== value.step || view.switching !== value.switching || view.empty !== value.empty || (view.message === 'connected') !== (value.message === 'connected');
     view = value;
     if (changed && value.step !== 'enter') void tick().then(() => heading?.focus());
-    if (value.step === 'sites') storageMessage = '';
+    if (value.step === 'sites' || value.step === 'loadingSites') storageMessage = '';
     if (controller?.token || value.message === 'connected' || value.message === 'reopen') clearStep(sessionStore);
   });
   let expiresAt = pending?.expiresAt ?? 0;
@@ -48,7 +48,7 @@
   let warnedStorage = false;
   let emailInput = $state<HTMLInputElement>();
   let resendButton = $state<HTMLButtonElement>();
-  const screenTitle = $derived(view.step === 'enter' ? text.codeTitle : view.step === 'opening' ? view.message === 'connected' ? text.connected : text.openingEditor : view.step === 'sites' ? view.empty ? text.empty : view.switching ? text.switchWebsites : text.choose : text.title);
+  const screenTitle = $derived(view.step === 'enter' ? text.codeTitle : view.step === 'opening' ? view.message === 'connected' ? text.connected : text.openingEditor : view.step === 'loadingSites' ? text.loadingSites : view.step === 'sitesFailure' ? text.sitesError : view.step === 'sites' ? view.empty ? text.empty : view.switching ? text.switchWebsites : text.choose : text.title);
   const fieldMessage = $derived(expired ? text.expired : view.message === 'format' || view.message === 'invalid' ? text[view.message] : '');
   const statusMessage = $derived(view.message === 'rate'
     ? throttleMessage(locale, view.retryMinutes)
@@ -108,9 +108,9 @@
       expired = true;
       if (moveFocus) { void tick().then(() => resendButton?.focus({ preventScroll: true })); }
     }, 250);
-    const leave = () => controller.dispose();
+    const leave = (event: PageTransitionEvent) => { if (!event.persisted) controller.dispose(); };
     window.addEventListener('pagehide', leave);
-    return () => { clearInterval(timer); leave(); window.removeEventListener('pagehide', leave); };
+    return () => { clearInterval(timer); controller.dispose(); window.removeEventListener('pagehide', leave); };
   });
 </script>
 
@@ -119,7 +119,7 @@
 <Chrome {locale} center>
   <main id="main" tabindex="-1">
     {#if view.step === 'ask' || view.step === 'enter'}<p class="label-station">{view.step === 'ask' ? text.step1 : text.step2}</p>{/if}
-    <h1 tabindex="-1" bind:this={heading}>{screenTitle}</h1>
+    {#if view.step !== 'loadingSites' && view.step !== 'sitesFailure'}<h1 tabindex="-1" bind:this={heading}>{screenTitle}</h1>{/if}
     {#if view.step === 'ask' || view.step === 'enter'}<p class="lead">{view.step === 'enter' ? text.codeLead.replace('{email}', email.trim()) : text.lead}</p>{/if}
     {#if view.step === 'ask'}
       <Card class="form-card"><form onsubmit={send}>
@@ -137,6 +137,8 @@
         <Button id="sign-in" type="submit" size="cta" disabled={view.busy || expired}>{view.busy && view.operation === 'verify' ? text.checking : text.verify}</Button>
       </form></Card>
       <div class="step-actions"><button disabled={view.busy} bind:this={resendButton} onclick={() => requestCode(true)}>{view.busy && view.operation === 'send' ? text.requesting : text.resend}</button><button disabled={view.busy} onclick={back}>{text.change}</button></div>
+    {:else if view.step === 'loadingSites'}
+      <p role="status">{view.opening ? text.openingSite.replace('{site}', view.sites.find(site => site.slug === view.opening)?.label ?? '') : text.loadingSites}</p>
     {:else if view.step === 'opening'}
       <p role="status">{text[view.message ?? 'openingEditor']}</p>
       {#if view.message === 'handoverFailed'}<Button onclick={() => controller.retryHandover()}>{text.retry}</Button>{/if}

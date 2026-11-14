@@ -1,4 +1,4 @@
-import { test, expect } from 'bun:test';
+import { test, expect, jest } from 'bun:test';
 import { createController, popupHandover, USER_KEY, validTarget, type Ports, type State } from '../login/controller.ts';
 import { RESERVED } from '../src/sites.ts';
 function fixture(search = '', responses: Response[] = []) {
@@ -175,7 +175,7 @@ for (const [header, minutes] of [['0.1', 1], ['1', 1], ['60', 1], ['60.1', 2], [
 test('S-13 list failure keeps token in memory and retries without another code', async () => {
   const f = fixture('', [new Response(null, { status: 503 }), Response.json([])]);
   await f.controller.choose('fake');
-  expect(f.state.step).toBe('sites'); expect(f.state.message).toBe('sitesError');
+  expect(f.state.step).toBe('sitesFailure'); expect(f.state.message).toBe('sitesError');
   expect(f.controller.token).toBe('fake');
   await f.controller.retrySites(); expect(f.state.message).toBe('empty');
 });
@@ -220,7 +220,7 @@ test('H-2 storage refusal stays on its row without navigating', async () => {
 for (const sites of [null, {}, [null], [{slug:'admin',label:'No'}], [{slug:'a'}]]) {
   test('S-13 malformed list retains the in-memory retry path: ' + JSON.stringify(sites), async () => {
     const f = fixture('', [Response.json(sites)]); await f.controller.choose('fake');
-    expect(f.state.step).toBe('sites'); expect(f.state.message).toBe('sitesError'); expect(f.controller.token).toBe('fake');
+    expect(f.state.step).toBe('sitesFailure'); expect(f.state.message).toBe('sitesError'); expect(f.controller.token).toBe('fake');
   });
 }
 
@@ -241,4 +241,42 @@ test('S-16 empty screen survives a failed sign-out with its recovery action', as
   const f = fixture('', [Response.json([]), new Response(null,{status:502})]);
   await f.controller.choose('fake'); await f.controller.switchSite();
   expect(f.state.step).toBe('sites'); expect(f.state.empty).toBe(true); expect(f.state.message).toBe('checkError');
+});
+
+
+test('S-13 S-14 no chooser is emitted while loading, on load failure, or before automatic opening', async () => {
+  const f = fixture('', [Response.json([{slug:'a',label:'A'}]), new Response()]);
+  const stages: string[] = [];
+  const controller = createController(f.ports, false, state => stages.push(state.step));
+  await controller.choose('fake'); expect(stages).not.toContain('sites'); expect(f.navigations).toEqual(['/a/']);
+  const failed = fixture('', [new Response(null, {status:503})]);
+  await failed.controller.choose('fake'); expect(failed.state.step).toBe('sitesFailure');
+});
+
+for (const ending of ['success', 'abandon', 'cached'] as const) test(`H-5 H-7 timer and listener lifecycle: ${ending}`, () => {
+  jest.useFakeTimers();
+  try {
+    const sent: unknown[] = [], messages: string[] = [];
+    const opener = { closed: false, postMessage: (data: unknown) => sent.push(data) };
+    const listeners = new Map<string, Function>();
+    const host = { opener, location: { origin: 'https://login.test' },
+      addEventListener: (name: string, callback: Function) => listeners.set(name, callback),
+      removeEventListener: (name: string) => listeners.delete(name) };
+    const handoff = popupHandover(host as unknown as Window, 'fake', message => messages.push(message));
+    const ack = () => listeners.get('message')?.({ origin: host.location.origin, source: opener, data: 'authorizing:github' });
+    const staleReceive = listeners.get('message')!;
+    expect(jest.getTimerCount()).toBe(1);
+    if (ending === 'success') ack();
+    else listeners.get('pagehide')!({ persisted: ending === 'cached' });
+    if (ending === 'cached') {
+      expect(jest.getTimerCount()).toBe(1); expect(listeners.has('message')).toBe(true);
+      ack(); expect(sent).toHaveLength(2);
+    } else expect(sent).toHaveLength(ending === 'success' ? 2 : 1);
+    expect(jest.getTimerCount()).toBe(0); expect(listeners.size).toBe(0);
+    jest.advanceTimersByTime(20000);
+    staleReceive({ origin: host.location.origin, source: opener, data: 'authorizing:github' });
+    handoff.retry();
+    expect(sent).toHaveLength(ending === 'abandon' ? 1 : 2);
+    expect(messages).not.toContain('handoverFailed');
+  } finally { jest.useRealTimers(); }
 });
