@@ -251,7 +251,9 @@ on the operator's machine.
 
 ## End-to-end check
 
-`bun run test:e2e` signs in for real in a browser: the real Worker with a local database, a typed code, the editor, the People page, a wrong code, and a language change on step two. `bun run deploy` runs it first, because unit tests can't catch a page that refuses a valid code. It needs Node 24 on PATH for the build and a Playwright Chromium install (`bunx playwright-core install chromium`). Screenshots land in `.wrangler/e2e/shots`.
+`bun run test:e2e` signs in for real in a browser: the real Worker with a local database, a typed code, the editor, the People page, a wrong code, and a language change on step two. `bun run deploy` runs it first, because unit tests can't catch a page that refuses a valid code. It needs Node 24 on PATH for the build and a Playwright Chromium install (`bunx playwright-core install chromium`). Screenshots land in `.wrangler/e2e/shots`. The Bun launcher bundles the runner and executes it with Node 24 so Wrangler's Miniflare API uses Node's fetch dispatcher. One local workerd owns both HTTP and fixture SQL through its D1 binding; storage is fresh and ephemeral for every run. Migrations run through that binding before browser traffic. No fixture CLI opens the database while the Worker is alive, and no developer secret file is loaded. Section and SQL timings are printed at the end of each section.
+
+For the local D1 contention probe, use `node e2e/reproduce-d1.mjs cli traffic 8836` and compare with `node e2e/reproduce-d1.mjs binding traffic 8836`. `idle` disables traffic; the optional last argument selects a persistence directory. See [the diagnosis record](docs/d1-e2e-diagnosis.md).
 
 ## Security model
 
