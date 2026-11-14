@@ -1,3 +1,4 @@
+if (!Bun.which('node')) throw new Error('Put Node 24 LTS on PATH before running the sign-in browser suite.');
 if (Bun.spawnSync(['node', '-p', 'process.versions.node.split(".")[0]']).stdout.toString().trim() !== '24') throw new Error('Build the sign-in app with Node 24 LTS on PATH.');
 
 // Bundle application imports (including token JSON) for Node's Wrangler/Miniflare APIs.

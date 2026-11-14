@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { cleanup, startResource } from '../e2e/lifecycle.ts';
+import { cleanup, cleanupStarted, startResource } from '../e2e/lifecycle.ts';
 
 test('cleanup attempts every resource even when one close throws', async () => {
   let disposed = false;
@@ -30,3 +30,17 @@ test('a Worker created after the deadline is still disposed', async () => {
   create({ dispose: async () => { disposed(); } });
   await closed;
 });
+
+for (const stage of ['Worker startup', 'Chromium launch']) {
+  test(`cleanup preserves the original rejected ${stage} error`, async () => {
+    const failure = new Error(`${stage} failed`);
+    const pending = stage === 'Worker startup'
+      ? startResource(async () => { throw failure; }, async () => {}, 100)
+      : Promise.reject(failure);
+    const run = async () => {
+      try { await pending; }
+      finally { await cleanup([() => cleanupStarted(pending, async () => {})]); }
+    };
+    await expect(run()).rejects.toBe(failure);
+  });
+}

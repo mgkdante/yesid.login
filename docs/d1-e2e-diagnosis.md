@@ -43,34 +43,36 @@ Every run gets fresh ephemeral storage. The real additive migrations run in sort
 
 ## Timings and validation
 
-The historical source comparison ran f1f5504 and cbf25c2 back to back with identical dependency versions. The final implementation runs are consecutive full-suite passes. Builds run separately and are excluded from the suite budget. Measurements were under load and are not a hardware performance guarantee.
+The historical source comparison ran f1f5504 and cbf25c2 back to back with identical dependency versions. The final implementation runs are consecutive full-suite passes after merging main at e73d196, including its added code-entry and storage-recovery checks. Builds run separately and are excluded from the suite budget. Measurements were under load and are not a hardware performance guarantee.
 
 All section times below are seconds. Timed commands are included in their containing sections. The final passes are the consecutive runs of the final code, after the historical pair.
 
-| Section | f1f5504 | cbf25c2 | Final pass 1 | Final pass 2 |
+| Section | f1f5504 (historical) | cbf25c2 (historical) | Merged pass 1 | Merged pass 2 |
 | --- | ---: | ---: | ---: | ---: |
-| prepare | 14.514 | 17.181 | 12.403 | 6.667 |
-| analyticsCounting | 4.518 | 4.606 | 4.322 | 4.423 |
-| themeAtSendTime | 1.711 | 1.094 | 1.266 | 1.575 |
-| legalNavigation | 3.197 | 6.801 | 2.760 | 2.780 |
-| signsInWithARealCode | 24.457 | 18.978 | 8.715 | 9.613 |
-| refusesAWrongCode | 7.490 | 9.964 | 3.000 | 3.803 |
-| keepsItsPlaceWhenLanguageChanges | 5.962 | 7.491 | 1.803 | 1.854 |
-| navbarIsWhole | 4.391 | 4.616 | 4.583 | 5.057 |
-| invitationFlow | 22.940 | 23.517 | 7.839 | 11.195 |
-| expiresInBrowser | 12.421 | 10.373 | 3.726 | 6.072 |
-| accountFlow | 21.577 | 11.773 | 4.005 | 5.658 |
-| visualMatrix | 218.299 | 252.226 | 138.216 | 144.006 |
-| emailSamples | 8.753 | 22.260 | 15.235 | 16.763 |
+| prepare | 14.514 | 17.181 | 11.793 | 18.441 |
+| forgivingCodeEntry | n/a | n/a | 4.987 | 6.226 |
+| pendingStorageRecovery | n/a | n/a | 1.314 | 1.737 |
+| startupRecovery | n/a | 24.542 | 20.938 | 25.781 |
+| startupEffectAndIsolation | n/a | 2.228 | 1.093 | 1.384 |
+| legalInitialFragment | n/a | 1.864 | 1.694 | 1.692 |
+| legalWithoutJavaScript | n/a | 4.060 | 3.229 | 4.020 |
+| legalLanguageHash | n/a | 3.717 | 3.303 | 5.645 |
+| analyticsCounting | 4.518 | 4.606 | 4.071 | 4.491 |
+| themeAtSendTime | 1.711 | 1.094 | 1.033 | 4.762 |
+| legalNavigation | 3.197 | 6.801 | 2.691 | 3.567 |
+| accountNavigation | n/a | 66.209 | 23.222 | 29.346 |
+| signsInWithARealCode | 24.457 | 18.978 | 9.513 | 9.794 |
+| refusesAWrongCode | 7.490 | 9.964 | 10.590 | 10.397 |
+| keepsItsPlaceWhenLanguageChanges | 5.962 | 7.491 | 1.776 | 1.923 |
+| navbarIsWhole | 4.391 | 4.616 | 4.362 | 4.471 |
+| invitationFlow | 22.940 | 23.517 | 8.697 | 8.522 |
+| peopleCorrectness | n/a | 12.434 | 30.311 | 22.769 |
+| expiresInBrowser | 12.421 | 10.373 | 4.508 | 4.414 |
+| accountFlow | 21.577 | 11.773 | 4.083 | 4.480 |
+| visualMatrix | 218.299 | 252.226 | 139.293 | 140.489 |
+| emailSamples | 8.753 | 22.260 | 16.249 | 11.550 |
 | startWorker | n/a | 5.303 | n/a | n/a |
-| startupRecovery | n/a | 24.542 | 17.522 | 21.218 |
-| startupEffectAndIsolation | n/a | 2.228 | 2.358 | 1.604 |
-| legalInitialFragment | n/a | 1.864 | 1.322 | 2.039 |
-| legalWithoutJavaScript | n/a | 4.060 | 3.139 | 4.030 |
-| legalLanguageHash | n/a | 3.717 | 3.551 | 5.577 |
-| accountNavigation | n/a | 66.209 | 27.926 | 28.116 |
-| peopleCorrectness | n/a | 12.434 | 15.830 | 39.551 |
-| total | 358.458 | 511.958 | 280.403 | 322.600 |
+| total | 358.458 | 511.958 | 309.627 | 326.985 |
 
 The historical pair built in 6.488 s and 4.921 s. Their CLI commands totaled 166.407 s for 50 commands and 202.652 s for 62 commands. The tracked sequential red/green probe failed with `SQLITE_BUSY` through the CLI and passed 1,000 binding writes in 39.672 s, verifying the stored count with zero HTTP failures.
 
@@ -84,16 +86,22 @@ Cleanup measurements use each launch's descendants and a fresh dedicated temp di
 
 | Control | Exit | Before W / C / T | Observed peak W / C / T | After W / C / T |
 | --- | ---: | --- | --- | --- |
-| Full passing run 1 | 0 | 0 / 0 / 0 | 2 / 6 / 4 | 0 / 0 / 0 |
-| Full passing run 2 | 0 | 0 / 0 / 0 | 2 / 7 / 4 | 0 / 0 / 0 |
+| Full passing run 1 | 0 | 0 / 0 / 0 | 2 / 7 / 4 | 0 / 0 / 0 |
+| Full passing run 2 | 0 | 0 / 0 / 0 | 2 / 6 / 4 | 0 / 0 / 0 |
 | Forced watchdog (40 s) | 1 | 0 / 0 / 0 | 2 / 8 / 4 | 0 / 0 / 0 |
 | SIGINT relay | 130 | 0 / 0 / 0 | 2 / 6 / 4 | 0 / 0 / 0 |
 | SIGTERM relay | 143 | 0 / 0 / 0 | 2 / 5 / 4 | 0 / 0 / 0 |
 
-The watchdog test temporarily lowered the local run limit to 40 seconds. Signal tests temporarily dispatched SIGINT or SIGTERM through the Bun launcher's handlers. All temporary triggers were removed before the consecutive passing pair; the committed run limit is ten minutes. Physical console Ctrl+C and POSIX signal delivery were not exercised.
+The watchdog test temporarily lowered the local run limit to 40 seconds. Signal tests temporarily dispatched SIGINT or SIGTERM through the Bun launcher's handlers. The watchdog/signal controls were measured in the prior cleanup review. All temporary triggers were removed before the consecutive passing pair; the committed run limit is ten minutes. Physical console Ctrl+C and POSIX signal delivery were not exercised.
 
-An initial 15-second stop exposed the browser-launch race: it left one Chromium process and one profile directory at the immediate post-exit snapshot. The pending-launch cleanup fixes that race. That process subsequently exited; removal of the initial control's profile directory was blocked by automatic approval review, so the local artifact remains. The final control directories above contain no residual runtime folders. Raw logs stayed local.
+An initial 15-second stop exposed the browser-launch race: it left one Chromium process and one profile directory at the immediate post-exit snapshot. The pending-launch cleanup fixes that race. That process subsequently exited, and the initial control's leftover profile directory has been removed. The final control directories above contain no residual runtime folders. Raw logs stayed local.
 
 ## Final validation
 
-`bun run check` passes with zero errors and warnings. `bun test tests` passes 243 tests across 23 files, with 1,820 expect calls, including five lifecycle regression tests. Copy-editor and the Node 24 build pass (Vite 4.30 s). The consecutive full E2E passes run 1,268 checks each in 280.403 s and 322.600 s; their 62 fixture commands total 3.794 s and 3.980 s. A separate Node 26 invocation fails early with the requested Node 24 message. Package and lockfile contents, browser scenario/assertion functions, and both existing limits remain unchanged.
+`bun run check` passes with zero errors and warnings. `bun test tests` passes 279 tests across 24 files, with 1,890 expect calls, including seven lifecycle regression tests. Copy-editor and the Node 24 build pass (Vite 5.03 s). The consecutive merged-suite passes run 1,301 checks each in 309.627 s and 326.985 s; their 65 fixture commands total 3.330 s and 3.995 s. The missing-Node smoke test fails immediately with the clear Node 24 PATH message. The Wrangler range, lockfile and both existing limits remain unchanged; all scenario/assertion functions from merged main are preserved.
+
+## Main integration and launch-error reporting
+
+Main at `e73d196bda15c94fcd74f5d0076fd7a8c648751f` was merged with merge commit `19c894e273fee84c868a3d617c26c306ff69a5bf`. A direct source comparison confirms every scenario/assertion function from main is retained, all 21 scenario calls run in their original order, and `e2e/account-navigation.ts` is unchanged. Every fixture call, including Account navigation and code-entry checks, uses the serving Worker's D1 binding. A grep for D1 CLI execution in `e2e/` finds none outside the tracked reproduction script.
+
+Rejected startup and browser-launch promises now contribute no second failure during cleanup, preserving the original error. Actual resource-close failures still propagate. Two regression tests reproduced the previous masking behavior and pass with the rejection handler. The launcher also reports a clear Node 24 PATH message when `node` is absent.

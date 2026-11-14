@@ -38,3 +38,8 @@ export async function startResource<T extends { dispose(): Promise<unknown> }>(s
     throw error;
   }
 }
+
+/** Close a resource whose launch may still be pending; a rejected launch owns no resource. */
+export function cleanupStarted<T>(started: Promise<T> | undefined, close: (resource: T) => Promise<unknown>): Promise<unknown> | undefined {
+  return started?.then(close, () => {});
+}

@@ -11,7 +11,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
 import { startLocalWorker } from './local-worker.ts';
-import { cleanup } from './lifecycle.ts';
+import { cleanup, cleanupStarted } from './lifecycle.ts';
 
 process.env.WRANGLER_SEND_METRICS = 'false';
 const PORT = Number(process.env.LOGIN_E2E_PORT || 8799);
@@ -820,8 +820,8 @@ let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 let browserLaunch: ReturnType<typeof chromium.launch> | undefined;
 let closing: Promise<void> | undefined;
 const closeResources = () => closing ??= cleanup([
-  () => browser ? browser.close() : browserLaunch?.then(launched => launched.close()),
-  () => worker ? worker.dispose() : workerStart?.then(started => started.dispose())
+  () => browser ? browser.close() : cleanupStarted(browserLaunch, launched => launched.close()),
+  () => worker ? worker.dispose() : cleanupStarted(workerStart, started => started.dispose())
 ]);
 async function stopRun(reason: string, exitCode: number) {
   clearTimeout(watchdog);
