@@ -7,7 +7,7 @@
   "packageManager": "bun@1.4.4",
   "scripts": {
     "test": "bun test tests",
-    "test:e2e": "bun e2e/sign-in.ts",
+    "test:e2e": "bun e2e/run.ts",
     "check": "tsc --noEmit && svelte-check --tsconfig login/tsconfig.json",
     "copy-editor": "bun scripts/copy-editor.ts",
     "schema": "bun scripts/generate-schema.ts",

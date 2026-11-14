@@ -10,36 +10,46 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
+import { startLocalWorker } from './local-worker.ts';
+import { cleanup, cleanupStarted } from './lifecycle.ts';
 
 process.env.WRANGLER_SEND_METRICS = 'false';
 const PORT = Number(process.env.LOGIN_E2E_PORT || 8799);
 const ORIGIN = `http://localhost:${PORT}`;
 const STATE = '.wrangler/e2e';
 const SHOTS = process.env.LOGIN_E2E_SHOTS || resolve(STATE, 'shots');
-const VARS = '.dev.vars.e2e';
-const DATABASE = 'site-editor-login-proof';
 const OWNER = 'e2e-owner@example.test';
 const CODE = '482915';
 const TAP_MIN = 44;
 
-const wrangler = (...args: string[]) => ['bunx', 'wrangler', ...args];
-
-/** A release must fail, never wait forever: each local Wrangler command gets a minute, and the whole run ten. */
+/** Each fixture command gets a minute, and the whole run ten. */
 const COMMAND_LIMIT_MS = 60_000;
 const RUN_LIMIT_MS = 10 * 60_000;
 let lastPassed = 'nothing yet';
-let workerPid: number | undefined;
-
-async function run(command: string[]): Promise<string> {
-  const child = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe' });
-  const limit = setTimeout(() => stop(child.pid), COMMAND_LIMIT_MS);
-  const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]).finally(() => clearTimeout(limit));
-  if (child.signalCode || (code !== 0 && !out && !err)) throw new Error(`${command.join(' ')} did not finish within ${COMMAND_LIMIT_MS / 1000} s`);
-  if (code !== 0) throw new Error(`${command.join(' ')} failed:\n${err || out}`);
-  return out;
+const started = performance.now();
+let commandMs = 0, commandCount = 0;
+async function timed<T>(name: string, work: () => Promise<T>): Promise<T> {
+  const start = performance.now();
+  try { return await work(); } finally { console.info(`timing - ${name}: ${Math.round(performance.now() - start)} ms`); }
 }
-
-const sql = (command: string) => run(wrangler('d1', 'execute', DATABASE, '--local', '--persist-to', STATE, '--command', command));
+let worker: Awaited<ReturnType<typeof startLocalWorker>> | undefined;
+let workerStart: ReturnType<typeof startLocalWorker> | undefined;
+async function fixtureCommand<T>(work: () => Promise<T>): Promise<T> {
+  const start = performance.now();
+  commandCount += 1;
+  let limit: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => { limit = setTimeout(() => reject(new Error('Fixture command exceeded COMMAND_LIMIT_MS')), COMMAND_LIMIT_MS); })
+    ]);
+  } finally { clearTimeout(limit); commandMs += performance.now() - start; }
+}
+async function sql(command: string): Promise<string> {
+  if (!worker) throw new Error('Local Worker is not running');
+  const local = worker;
+  return fixtureCommand(() => local.sql(command));
+}
 
 /** Replaces the code the Worker just generated with a known one, stored exactly as Better Auth stores it. */
 async function setPendingCode(email: string, code = CODE, type = 'sign-in') {
@@ -50,28 +60,14 @@ async function setPendingCode(email: string, code = CODE, type = 'sign-in') {
 async function prepare() {
   rmSync(STATE, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
-  writeFileSync(VARS, 'BETTER_AUTH_SECRET=e2e-local-only-fake-secret-at-least-32-characters\nGITHUB_APP_PRIVATE_KEY=fake-not-a-private-key\nRESEND_API_KEY=fake-local-only\n');
-  await run(wrangler('d1', 'migrations', 'apply', DATABASE, '--local', '--persist-to', STATE));
+  worker = await (workerStart = startLocalWorker(PORT, COMMAND_LIMIT_MS));
+  const local = worker;
+  await fixtureCommand(() => local.migrate());
   const now = new Date().toISOString();
   await sql(`${exampleSiteSql}
 INSERT INTO site(slug,owner,repo,branch,label,installation_id) VALUES ('choice','fixture','fixture','main','Choice','fake');
 INSERT INTO user (id,name,email,emailVerified,createdAt,updatedAt) VALUES ('e2e-owner','E2E','${OWNER}',1,'${now}','${now}');
     INSERT INTO membership (site_slug,user_id,role) VALUES ('example','e2e-owner','owner');`);
-}
-
-async function startWorker() {
-  const worker = Bun.spawn(wrangler('dev', 'e2e/worker.ts', '--local', '--persist-to', STATE, '--env-file', VARS, '--port', String(PORT), '--no-infer-origin-from-routes'), { stdout: 'ignore', stderr: 'ignore' });
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const ready = await fetch(ORIGIN).then((response) => response.ok, () => false);
-    if (ready) return worker;
-    await Bun.sleep(1000);
-  }
-  throw new Error('The local Worker did not start');
-}
-
-function stop(pid: number) {
-  if (process.platform === 'win32') Bun.spawnSync(['taskkill', '/PID', String(pid), '/T', '/F']);
-  else process.kill(pid);
 }
 
 function check(name: string, passed: boolean, detail = '') {
@@ -933,50 +929,76 @@ async function analyticsCounting(browser: Awaited<ReturnType<typeof chromium.lau
   await context.close();
 }
 
+let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+let browserLaunch: ReturnType<typeof chromium.launch> | undefined;
+let closing: Promise<void> | undefined;
+const closeResources = () => closing ??= cleanup([
+  () => browser ? browser.close() : cleanupStarted(browserLaunch, launched => launched.close()),
+  () => worker ? worker.dispose() : cleanupStarted(workerStart, started => started.dispose())
+]);
+async function stopRun(reason: string, exitCode: number) {
+  clearTimeout(watchdog);
+  console.error(reason);
+  try { await closeResources(); }
+  catch (error) { console.error(error); }
+  finally { process.exit(exitCode); }
+}
 const watchdog = setTimeout(() => {
-  if (workerPid) stop(workerPid);
-  console.error(`E2E stopped after ${RUN_LIMIT_MS / 60_000} minutes. Last check passed: ${lastPassed}`);
-  process.exit(1);
+  void stopRun(`E2E stopped after ${RUN_LIMIT_MS / 60_000} minutes. Last check passed: ${lastPassed}`, 1);
 }, RUN_LIMIT_MS);
-await prepare();
-const worker = await startWorker();
-workerPid = worker.pid;
-const browser = await chromium.launch();
+const interrupt = () => { void stopRun('E2E interrupted by SIGINT', 130); };
+const terminate = () => { void stopRun('E2E interrupted by SIGTERM', 143); };
+process.once('SIGINT', interrupt);
+process.once('SIGTERM', terminate);
+const forwardedSignal = (message: unknown) => {
+  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'e2e-signal' || !('signal' in message)) return;
+  if (message.signal === 'SIGINT') interrupt();
+  if (message.signal === 'SIGTERM') terminate();
+};
+process.on('message', forwardedSignal);
 try {
+  await timed('prepare', prepare);
+  const launched = await (browserLaunch = chromium.launch());
+  browser = launched;
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' })).newPage();
   const problems: string[] = [];
   page.on('console', (message) => { if (message.type() === 'error' && /Content Security Policy/i.test(message.text())) problems.push(message.text()); });
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
-  await forgivingCodeEntry(browser);
-  await pendingStorageRecovery(browser);
-  await accountCorrectness(browser);
-  await accountStorageBlocked(browser);
-  await startupRecovery(browser);
-  await startupEffectAndIsolation(browser);
-  await legalInitialFragment(page);
-  await legalWithoutJavaScript(browser);
-  await legalLanguageHash(page);
-  await analyticsCounting(browser);
-  await themeAtSendTime(page);
-  await legalNavigation(page);
-  await accountNavigation(browser, sql, requestCode, CODE, ORIGIN, SHOTS, check);
-  await signsInWithARealCode(page);
-  await refusesAWrongCode(page);
-  await keepsItsPlaceWhenLanguageChanges(page);
-  await navbarIsWhole(page);
-  await invitationFlow(page);
-  await peopleCorrectness(page);
-  await expiresInBrowser(page);
-  await accountFlow(page);
-  await visualMatrix(page);
-  await emailSamples(browser);
+  await timed('forgivingCodeEntry', () => forgivingCodeEntry(launched));
+  await timed('pendingStorageRecovery', () => pendingStorageRecovery(launched));
+  await timed('accountCorrectness', () => accountCorrectness(launched));
+  await timed('accountStorageBlocked', () => accountStorageBlocked(launched));
+  await timed('startupRecovery', () => startupRecovery(launched));
+  await timed('startupEffectAndIsolation', () => startupEffectAndIsolation(launched));
+  await timed('legalInitialFragment', () => legalInitialFragment(page));
+  await timed('legalWithoutJavaScript', () => legalWithoutJavaScript(launched));
+  await timed('legalLanguageHash', () => legalLanguageHash(page));
+  await timed('analyticsCounting', () => analyticsCounting(launched));
+  await timed('themeAtSendTime', () => themeAtSendTime(page));
+  await timed('legalNavigation', () => legalNavigation(page));
+  await timed('accountNavigation', () => accountNavigation(launched, sql, requestCode, CODE, ORIGIN, SHOTS, check));
+  await timed('signsInWithARealCode', () => signsInWithARealCode(page));
+  await timed('refusesAWrongCode', () => refusesAWrongCode(page));
+  await timed('keepsItsPlaceWhenLanguageChanges', () => keepsItsPlaceWhenLanguageChanges(page));
+  await timed('navbarIsWhole', () => navbarIsWhole(page));
+  await timed('invitationFlow', () => invitationFlow(page));
+  await timed('peopleCorrectness', () => peopleCorrectness(page));
+  await timed('expiresInBrowser', () => expiresInBrowser(page));
+  await timed('accountFlow', () => accountFlow(page));
+  await timed('visualMatrix', () => visualMatrix(page));
+  await timed('emailSamples', () => emailSamples(launched));
   writeFileSync(resolve(SHOTS,'index.md'), '# Local polish and legal checks\n\n'+captures.map(file=>`- [${file}](${file})`).join('\n'));
   check('no script errors or security policy violations on the sign-in pages', problems.length === 0, problems.slice(0, 3).join(' | ').slice(0, 400));
   console.info(`All passed. Screenshots: ${SHOTS}`);
 } finally {
-  await browser.close();
-  stop(worker.pid);
-  rmSync(VARS, { force: true });
-  clearTimeout(watchdog);
+  console.info(`timing - total: ${Math.round(performance.now() - started)} ms; commands: ${commandCount}, ${Math.round(commandMs)} ms`);
+  try { await closeResources(); }
+  finally {
+    clearTimeout(watchdog);
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', terminate);
+    process.off('message', forwardedSignal);
+    if (process.connected) process.disconnect?.();
+  }
 }
