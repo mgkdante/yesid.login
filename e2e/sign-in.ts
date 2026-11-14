@@ -236,6 +236,7 @@ async function forgivingCodeEntry(browser: Awaited<ReturnType<typeof chromium.la
   await page.locator('#sign-in').focus();
   await page.clock.fastForward(300250);
   check('S-10 deadline keeps Code, digits, disabled submit and recovery focus', await codeField(page).inputValue() === '123456' && await page.locator('#sign-in').isDisabled() && await page.getByRole('button', { name: 'Request another code', exact: true }).evaluate(el => el === document.activeElement));
+  check('S-10 expired heading clears the fixed header at 390 px', await page.evaluate(() => document.querySelector('h1')!.getBoundingClientRect().top >= document.querySelector('header')!.getBoundingClientRect().bottom));
   await page.screenshot({ path: resolve(SHOTS, 'log-2-expired-390.png') });
   await page.reload(); await codeField(page).waitFor();
   check('S-11 reload restores expired context without digits', await codeField(page).inputValue() === '' && await page.locator('#sign-in').isDisabled());
@@ -294,7 +295,7 @@ async function pendingStorageRecovery(browser: Awaited<ReturnType<typeof chromiu
       await page.getByRole('status').filter({ hasText: 'Request received' }).waitFor();
       check('S-1 successful save clears the storage warning and stores the sent address', !(await page.locator('main').innerText()).includes('This browser cannot keep') && await page.evaluate(() => JSON.parse(sessionStorage.getItem('login.pending')!).email) === OWNER);
     } else {
-      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.locator('.sites').waitFor();
+      await codeField(page).fill('123456'); await page.locator('#sign-in').click(); await page.getByRole('status').filter({ hasText: 'No site is linked' }).waitFor();
       check('S-5 Sites clears the pending storage warning', !(await page.locator('main').innerText()).includes('This browser cannot keep'));
     }
     await context.close();
