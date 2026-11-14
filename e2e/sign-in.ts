@@ -166,6 +166,21 @@ async function keepsItsPlaceWhenLanguageChanges(page: Page) {
 }
 
 // LOG-9 is startup only: no S-*, H-* or A-* proof transition is changed.
+async function checkStartupState(page: Page, mode: string, path: string, lang: 'fr' | 'en' | 'es', text: readonly string[]) {
+  const missing = path === '/missing/';
+  if (mode === 'boot-blocked') {
+    check(`LOG-9 boot blocked ${path} ${lang}: visible sentence`, await page.getByRole('status').isVisible() && (await page.getByRole('status').innerText()).length > 10);
+  } else if (mode === 'nojs') {
+    check(`LOG-9 nojs ${path} ${lang}: instruction`, missing ? (await page.locator('noscript').innerText()).length > 10 : await page.locator('noscript').innerText() === text[1]);
+    check(`LOG-9 nojs ${path} ${lang}: no loading loop`, !await page.getByRole('status').isVisible());
+  } else {
+    const failure = missing ? { fr: 'Impossible de charger cette page. Rechargez la page ou contactez Yesid.', en: 'We could not load this page. Reload the page or contact Yesid.', es: 'No pudimos cargar esta página. Recarga la página o contacta a Yesid.' }[lang] : text[0];
+    await page.waitForFunction(text => document.querySelector('[data-startup-failure]')?.textContent === text, failure);
+    check(`LOG-9 ${mode} ${path} ${lang}: failure and reload`, await page.getByRole('status').innerText() === failure
+      && await page.getByRole('link', { name: text[2], exact: true }).isVisible());
+  }
+}
+
 async function startupRecovery(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const copy = {
     fr: ['Impossible de charger la connexion. Rechargez la page ou contactez Yesid.', 'Activez JavaScript pour vous connecter. Rechargez ensuite cette page.', 'Recharger'],
@@ -173,11 +188,12 @@ async function startupRecovery(browser: Awaited<ReturnType<typeof chromium.launc
     es: ['No pudimos cargar el inicio de sesión. Recarga la página o contacta a Yesid.', 'Activa JavaScript para iniciar sesión. Luego recarga esta página.', 'Recargar']
   };
   for (const lang of ['fr', 'en', 'es'] as const) {
-    for (const mode of ['blocked', 'throwing', 'mount', 'nojs']) {
+    for (const mode of ['blocked', 'throwing', 'mount', 'boot-blocked', 'nojs']) {
       const context = await browser.newContext({ javaScriptEnabled: mode !== 'nojs', viewport: { width: 390, height: 844 } });
       try {
         const page = await context.newPage();
-        if (mode === 'blocked') await page.route('**/login/build/app.js', route => route.abort());
+        if (mode === 'boot-blocked') await page.route('**/login/boot.js', route => route.abort());
+        if (mode === 'blocked' || mode === 'boot-blocked') await page.route('**/login/build/app.js', route => route.abort());
         if (mode === 'throwing') await page.route('**/login/build/app.js', route => route.fulfill({ contentType: 'text/javascript', body: 'throw new Error("Forced startup failure");' }));
         if (mode === 'mount') await page.addInitScript(() => {
           const append = Node.prototype.appendChild;
@@ -190,14 +206,7 @@ async function startupRecovery(browser: Awaited<ReturnType<typeof chromium.launc
         for (const path of ['/', '/auth/popup', '/account', '/example/people', '/missing/']) {
           await page.goto(`${ORIGIN}${path}?lang=${lang}`);
           check(`LOG-9 ${mode} ${path} ${lang}: language`, await page.locator('html').getAttribute('lang') === lang);
-          if (mode === 'nojs') {
-            check(`LOG-9 nojs ${path} ${lang}: instruction`, await page.locator('noscript').innerText() === copy[lang][1]);
-            check(`LOG-9 nojs ${path} ${lang}: no loading loop`, !await page.getByRole('status').isVisible());
-          } else {
-            await page.waitForFunction(text => document.querySelector('[data-startup-failure]')?.textContent === text, copy[lang][0]);
-            check(`LOG-9 ${mode} ${path} ${lang}: failure and reload`, await page.getByRole('status').innerText() === copy[lang][0]
-              && await page.getByRole('link', { name: copy[lang][2], exact: true }).isVisible());
-          }
+          await checkStartupState(page, mode, path, lang, copy[lang]);
           await page.screenshot({ path: resolve(SHOTS, `startup-${mode}-${lang}-${path.replaceAll('/', '') || 'home'}.png`), fullPage: true });
         }
         if (mode === 'blocked') {
@@ -207,6 +216,73 @@ async function startupRecovery(browser: Awaited<ReturnType<typeof chromium.launc
           check(`LOG-9 ${lang}: fallback removed after mount`, await page.locator('[data-startup-failure]').count() === 0);
         }
       } finally { await context.close(); }
+    }
+  }
+}
+
+async function startupEffectAndIsolation(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const context = await browser.newContext({ locale: 'en-US' });
+  try {
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'lang')!;
+      let failed = false;
+      Object.defineProperty(HTMLElement.prototype, 'lang', {
+        get() { return descriptor.get!.call(this); },
+        set(value: string) {
+          descriptor.set!.call(this, value);
+          if (!failed && document.querySelector('#app .login-chrome')) {
+            failed = true;
+            throw new Error('Forced initial effect failure');
+          }
+        }
+      });
+    });
+    await page.goto(ORIGIN + '/');
+    await page.waitForFunction(() => document.documentElement.dataset.startup === 'failed');
+    check('LOG-9 initial effect failure restores French fallback and lang', await page.locator('html').getAttribute('lang') === 'fr'
+      && (await page.getByRole('status').innerText()).startsWith('Impossible de charger') && await page.locator('#email').count() === 0);
+  } finally { await context.close(); }
+  const clean = await browser.newContext();
+  try {
+    const page = await clean.newPage();
+    await page.route('**/login/build/app.js', async route => {
+      await page.evaluate(() => {
+        document.querySelector('link[href="/login/fonts.css"]')!.dispatchEvent(new Event('error'));
+        window.dispatchEvent(new PromiseRejectionEvent('unhandledrejection', { promise: Promise.resolve(), reason: 'unrelated' }));
+      });
+      check('LOG-9 unrelated resource/rejection leaves loading intact', await page.locator('html').getAttribute('data-startup') === 'loading');
+      await route.continue();
+    });
+    await page.goto(ORIGIN + '/?lang=en'); await page.locator('#email').waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event('login-startup-failed')));
+    check('LOG-9 successful mount stops startup listeners', await page.locator('html').getAttribute('data-startup') === 'mounted'
+      && await page.locator('[data-startup-failure]').count() === 0);
+    await page.route('**/editor/boot.js', route => route.abort());
+    await page.goto(ORIGIN + '/example/');
+    check('LOG-9 editor receives no startup marker', await page.locator('html').getAttribute('data-startup') === null);
+  } finally { await clean.close(); }
+}
+
+async function legalInitialFragment(page: Page) {
+  await page.addInitScript(() => {
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function(options) {
+      if (this.id) document.documentElement.dataset.legalScrollCopies = String(document.querySelectorAll(`[id="${this.id}"]`).length);
+      original.call(this, options);
+    };
+  });
+  for (const kind of ['privacy', 'terms'] as const) {
+    const id = ({ privacy, terms })[kind].en.sections[1].id;
+    for (const lang of ['fr', 'en', 'es']) {
+      await page.goto(`${ORIGIN}/legal/${kind}?lang=${lang}#${id}`);
+      await page.locator('[data-testid="footer"]').waitFor();
+      await page.waitForFunction(id => {
+        const top = document.getElementById(id)!.getBoundingClientRect().top;
+        return top >= 0 && top < 200;
+      }, id);
+      check(`LOG-9 ${kind} ${lang}: initial hash scrolls after mount without duplicate ids`,
+        await page.locator(`#${id}`).count() === 1 && await page.locator('html').getAttribute('data-legal-scroll-copies') === '1');
     }
   }
 }
@@ -512,6 +588,8 @@ try {
   // The design system's view transitions report this harmlessly when a page navigates during one.
   page.on('pageerror', (error) => { if (error.message !== 'Transition was skipped') problems.push(error.message); });
   await startupRecovery(browser);
+  await startupEffectAndIsolation(browser);
+  await legalInitialFragment(page);
   await legalWithoutJavaScript(browser);
   await legalLanguageHash(page);
   await analyticsCounting(browser);

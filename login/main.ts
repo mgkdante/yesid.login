@@ -1,4 +1,4 @@
-import { mount, flushSync } from 'svelte';
+import { mount, unmount, flushSync } from 'svelte';
 import { configureUi } from '@yesid/ui/cn';
 import App from './App.svelte';
 import { startAnalytics } from './analytics';
@@ -13,13 +13,21 @@ async function start() {
     : /^\/[^/]+\/people$/.test(path) ? await import('./People.svelte')
     : path === '/account' ? await import('./Account.svelte') : { default: App };
   const target = document.getElementById('app')!;
-  const fallback = [...target.childNodes];
+  const language = document.documentElement.lang;
+  const fallback = document.createDocumentFragment();
+  while (target.firstChild) fallback.appendChild(target.firstChild);
+  let app: ReturnType<typeof mount> | undefined;
   try {
-    mount(component.default, { target });
+    app = mount(component.default, { target });
     flushSync();
-    for (const node of fallback) node.remove();
+    window.dispatchEvent(new Event('login-startup-mounted'));
   } catch (error) {
-    target.replaceChildren(...fallback);
+    try {
+      if (app) await unmount(app);
+    } finally {
+      target.replaceChildren(fallback);
+      document.documentElement.lang = language;
+    }
     throw error;
   }
 }

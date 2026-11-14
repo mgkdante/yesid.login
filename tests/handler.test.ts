@@ -494,8 +494,8 @@ for (const lang of ['fr', 'en', 'es']) {
       const html = await response.text();
       expect(html).toContain(`<html lang="${lang}"`);
       expect(html).toContain('<noscript>');
-      expect(html).toContain(nojs[lang as keyof typeof nojs]);
-      expect(html).toContain(loading[lang as keyof typeof loading]);
+      if (path !== '/missing/') expect(html).toContain(nojs[lang as keyof typeof nojs]);
+      if (path !== '/missing/') expect(html).toContain(loading[lang as keyof typeof loading]);
       for (const other of ['fr', 'en', 'es'].filter(value => value !== lang)) {
         expect(html).not.toContain(loading[other as keyof typeof loading]);
         expect(html).not.toContain(nojs[other as keyof typeof nojs]);
@@ -511,3 +511,17 @@ test('startup shell locale defaults to French for missing or unallowlisted langu
     expect(await (await request('/' + query, undefined, false)).text()).toContain('<html lang="fr"');
   }
 });
+
+// Frozen response values from main at cd0a9f7; independent of imported page constants.
+for (const path of ['/', '/auth/popup', '/account', '/a/people', '/missing/']) {
+  test(`LOG-9 preserves main response headers for ${path}`, async () => {
+    const response = await handler(new Request('https://login.test' + path, { headers: { Accept: 'text/html' } }), env(), ctx);
+    expect(Object.fromEntries(response.headers)).toEqual({
+      'cache-control': 'no-store, no-transform', 'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': "default-src 'none'; script-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff',
+      'strict-transport-security': 'max-age=63072000; includeSubDomains',
+      'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'x-robots-tag': 'noindex, nofollow'
+    });
+  });
+}

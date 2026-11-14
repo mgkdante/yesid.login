@@ -27,17 +27,22 @@ const SHARE_IMAGE = 'https://login.yesid.dev/login/og.png';
 /** One card for every address: it names no client, and a link preview cannot know the reader's language. */
 const HEAD_BRAND = `<meta name="description" content="${SUMMARY}"><meta name="theme-color" content="#141414"><link rel="icon" href="/login/favicon-dark.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/login/apple-touch-icon.png">
 <meta property="og:type" content="website"><meta property="og:site_name" content="yesid.dev"><meta property="og:title" content="login.yesid.dev"><meta property="og:description" content="${SUMMARY}"><meta property="og:image" content="${SHARE_IMAGE}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="yesid. login.yesid.dev"><meta name="twitter:card" content="summary_large_image">`;
-interface Shell { title: string; index?: boolean; page?: string; lang?: string; content: string }
+interface Shell { title: string; index?: boolean; page?: string; lang?: string; content: string; startup?: boolean }
 /** The first paint before the app mounts, and what stays on screen if its bundle cannot load. */
-const loginShell = ({ title, index, page, lang = 'fr', content }: Shell) => `<!doctype html>
-<html lang="${lang}"${page ? ` data-page="${page}"` : ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+const loginShell = ({ title, index, page, lang = 'fr', content, startup }: Shell) => `<!doctype html>
+<html lang="${lang}"${startup ? ' data-login-startup' : ''}${page ? ` data-page="${page}"` : ''}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 ${index ? '' : '<meta name="robots" content="noindex">'}<title>${title}</title>
 ${HEAD_BRAND}
 <script src="/login/boot.js"></script>
 <link rel="stylesheet" href="/login/fonts.css">
 <link rel="stylesheet" href="/login/build/app.css">
 </head><body><div id="app">${content}</div>
-<script type="module" src="/login/build/app.js"></script></body></html>`;
+<script type="module" src="/login/start.js"></script></body></html>`;
+const missingCopy = {
+  fr: { loading: 'Chargement de la page…', nojs: 'Cette page est introuvable. Vérifiez l’adresse ou revenez à la connexion.', failure: 'Impossible de charger cette page. Rechargez la page ou contactez Yesid.' },
+  en: { loading: 'Loading this page…', nojs: 'This page could not be found. Check the address or return to sign-in.', failure: 'We could not load this page. Reload the page or contact Yesid.' },
+  es: { loading: 'Cargando esta página…', nojs: 'No se encontró esta página. Revisa la dirección o vuelve al inicio de sesión.', failure: 'No pudimos cargar esta página. Recarga la página o contacta a Yesid.' }
+};
 const startupCopy = {
   fr: { heading: 'Connexion', loading: 'Chargement de la connexion…', nojs: 'Activez JavaScript pour vous connecter. Rechargez ensuite cette page.', failure: 'Impossible de charger la connexion. Rechargez la page ou contactez Yesid.', reload: 'Recharger', contact: 'Contactez Yesid', missing: 'Page introuvable', reason: 'Vérifiez l’adresse ou revenez à la connexion.' },
   en: { heading: 'Sign in', loading: 'Loading sign-in…', nojs: 'Enable JavaScript to sign in. Then reload this page.', failure: 'We could not load sign-in. Reload the page or contact Yesid.', reload: 'Reload', contact: 'Contact Yesid', missing: 'Page not found', reason: 'Check the address or return to sign-in.' },
@@ -46,12 +51,13 @@ const startupCopy = {
 /** The legal locale allowlist also governs the first paint, before browser preferences are available. */
 export function homeHtml(query?: unknown, missing = false) {
   const lang = legalLocale(query), text = startupCopy[lang], labels = legalLabels[lang];
-  return loginShell({ title: `${missing ? text.missing : text.heading} | yesid.dev`, lang,
+  const status = missing ? missingCopy[lang] : text;
+  return loginShell({ title: `${missing ? text.missing : text.heading} | yesid.dev`, lang, startup: true,
     page: missing ? 'not-found' : undefined,
     content: `<main class="startup-state"><p class="label-station">yesid. | login</p><h1>${missing ? text.missing : text.heading}</h1>
 ${missing ? `<p>${text.reason}</p><a href="/?lang=${lang}">${labels.back}</a>` : ''}
-<p class="startup-status" role="status" data-startup-failure="${text.failure}">${text.loading}</p>
-<noscript><p>${text.nojs}</p></noscript>
+<p class="startup-status" role="status" data-startup-failure="${status.failure}">${status.loading}</p>
+<noscript><link rel="stylesheet" href="/login/nojs.css"><p>${status.nojs}</p></noscript>
 <p><a href="">${text.reload}</a> <a href="mailto:contact@yesid.dev">${text.contact}</a></p>
 <nav><a href="/legal/privacy?lang=${lang}">${labels.privacy}</a> <a href="/legal/terms?lang=${lang}">${labels.terms}</a></nav></main>` });
 }

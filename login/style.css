@@ -78,5 +78,4 @@ a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .legal-toc { margin-block: 2rem; }
 .legal-toc a { display: inline-block; padding-block: 0.25rem; }
 
-.startup-status { display: none; }
-[data-startup] .startup-status { display: block; }
+.startup-status { display: block; }
