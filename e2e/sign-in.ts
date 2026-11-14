@@ -106,11 +106,21 @@ async function switchActionsFit(page: Page) {
       const clipped = await page.locator('main button, main a[data-slot="button"]').evaluateAll(buttons => buttons.flatMap(button => {
         const box = button.getBoundingClientRect();
         if (box.left < 0 || box.right > document.documentElement.clientWidth) return [button.textContent?.trim()];
+        const container = button.closest('[data-slot="card"]')
+          ?? button.closest('.people-add')?.querySelector('[data-slot="card"]');
+        if (!container) return [`Missing container: ${button.textContent?.trim()}`];
+        const bounds = container.getBoundingClientRect();
+        if (box.left < bounds.left || box.right > bounds.right) return [button.textContent?.trim()];
         const elements = [button, ...button.querySelectorAll('span')];
         return elements.filter(el => el.clientWidth > 0 && (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight))
           .map(() => button.textContent?.trim());
       }));
       check(`LOG-3 S-17 button labels fit ${screen}/${lang}/${width}`, clipped.length === 0, clipped.join(' | '));
+      if (screen === 'switch') {
+        const announcements = (await page.getByRole('status').allTextContents()).filter(text => text.trim());
+        check(`LOG-3 S-17 switch explanation announced once ${lang}/${width}`,
+          await page.locator('.form-card [role="status"]').count() === 1 && announcements.length === 1);
+      }
       await page.screenshot({ path: resolve(SHOTS, `log-3-${screen}-${lang}-${width}.png`), fullPage: true });
     }
   }
